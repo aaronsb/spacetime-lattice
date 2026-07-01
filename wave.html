@@ -404,7 +404,11 @@ const simMat = new THREE.ShaderMaterial({
       }
       float edge = min(min(min(c.x, FN-1.0-c.x), min(c.y, FN-1.0-c.y)),
                        min(c.z, FN-1.0-c.z));
-      float damp = uDamp + 0.22*(1.0 - smoothstep(0.0, 8.0, edge));  // absorbing sponge walls
+      // absorbing sponge: wide + gentle-onset (quadratic) — an abrupt damping ramp
+      // is itself an impedance step that reflects; this one eats outgoing waves
+      // across 10 cells with negligible bounce-back. Statics unaffected (pi-only).
+      float sp = 1.0 - smoothstep(0.0, 10.0, edge);
+      float damp = uDamp + 0.30*sp*sp;
       float pi2  = s.g + uC2*(lap + rho) - damp*s.g;
       gl_FragColor = vec4(s.r + pi2, pi2, 0.0, 0.0);
     }`
@@ -538,42 +542,50 @@ if(!glOK){ chirpCv.style.display='none'; document.getElementById('chirpLabel').s
 // a "magnet viewing film" for gravity. Colour = the volume's own ramp (|grad phi|
 // + wave glow), plus log-spaced iso-|g| contour bands. Sweeping the clip slider
 // scans the sheet through the volume.
+// The cut face is a tessellated surface: its vertices run through the SAME warp()
+// as the lattice points, so the face funnels into the wells and physically ripples
+// as wavefronts cross it. Polygons are filled solid with the points' colour ramp;
+// log-spaced iso-displacement contour bands give the magnet-film read. Works in
+// both Analytic and Dynamic modes (warp() branches internally).
+const SLICE_PREAMBLE = `
+  uniform float uStrength; uniform int uModel; uniform int uCount;
+  uniform vec3 uPos[16]; uniform float uMass[16];`;
 const sliceMat = new THREE.ShaderMaterial({
-  uniforms:{
-    uGrad:uniforms.uGrad, uFHalf:uniforms.uFHalf,
-    uDispGain:uniforms.uDispGain, uGlowGain:uniforms.uGlowGain, uBright:uniforms.uBright
-  },
-  transparent:true, depthWrite:false, blending:THREE.AdditiveBlending, side:THREE.DoubleSide,
+  uniforms,                        // shared master uniform set
+  side:THREE.DoubleSide,
   vertexShader:`
-    varying vec3 vW;
+    ${SLICE_PREAMBLE}
+    varying vec3 vWorld; varying float vComp;
+    ${WARP_GLSL}
     void main(){
       vec4 w = modelMatrix * vec4(position, 1.0);
-      vW = w.xyz;
-      gl_Position = projectionMatrix * viewMatrix * w;
+      vWorld = w.xyz;
+      float comp;
+      vec3 wp = warp(w.xyz, comp);
+      vComp = comp;
+      gl_Position = projectionMatrix * viewMatrix * vec4(wp, 1.0);
     }`,
   fragmentShader:`
-    uniform float uDispGain; uniform float uGlowGain; uniform float uBright;
-    varying vec3 vW;
-    ${FIELD_SAMPLE_GLSL}
+    ${SLICE_PREAMBLE}
+    uniform float uBright;
+    varying vec3 vWorld; varying float vComp;
+    ${WARP_GLSL}
     ${COLOR_GLSL}
     void main(){
-      vec4 g = fieldSample(vW);
-      float gm = length(g.xyz);
-      float t = clamp(uDispGain*gm/240.0, 0.0, 1.0);   // same scale the nodes displace by
-      float glow = clamp(uGlowGain*g.w, 0.0, 1.0);     // wavefront passing through the sheet
-      float comp = clamp(t + glow, 0.0, 1.0);
-      vec3 col = ramp(comp);
-      float line = 0.0;                                // log-spaced iso-|g| contour bands
-      if(gm > 1e-6){
-        float lg = log2(gm)*2.2;
+      float comp;
+      vec3 wp = warp(vWorld, comp);           // per-pixel field value on the cut
+      float mag = length(wp - vWorld);        // node displacement magnitude here
+      vec3 col = ramp(comp) * (0.22 + 0.78*comp);
+      float line = 0.0;                       // iso-displacement contour bands
+      if(mag > 1e-4){
+        float lg = log2(mag)*2.2;
         float d = min(fract(lg), 1.0-fract(lg));
         line = 1.0 - smoothstep(0.0, 0.09, d);
       }
-      float a = (0.05 + 0.60*comp + 0.25*line*(0.25+0.75*comp)) * uBright;
-      gl_FragColor = vec4(col + vec3(0.30)*line, a);
+      gl_FragColor = vec4((col + vec3(0.22)*line) * uBright, 1.0);
     }`
 });
-const sliceMesh = new THREE.Mesh(new THREE.PlaneGeometry(1,1), sliceMat);
+const sliceMesh = new THREE.Mesh(new THREE.PlaneGeometry(1,1,96,96), sliceMat);
 sliceMesh.rotation.y = Math.PI/2;      // normal +x: the sheet spans y/z at the cut
 sliceMesh.frustumCulled = false;
 sliceMesh.visible = false;
@@ -779,6 +791,7 @@ function makeTrail(colorHex){
     uStrength:uniforms.uStrength, uModel:uniforms.uModel, uCount:uniforms.uCount,
     uPos:uniforms.uPos, uMass:uniforms.uMass,
     uUseField:uniforms.uUseField, uGrad:uniforms.uGrad, uFHalf:uniforms.uFHalf,
+    uFOrigin:uniforms.uFOrigin,
     uDispGain:uniforms.uDispGain, uGlowGain:uniforms.uGlowGain,
     uColor:{value:new THREE.Color(colorHex)}
   };
@@ -1470,12 +1483,12 @@ function loop(now){
   // scan sheets ride their cut planes whenever a cross-section is active
   {
     const B = uniforms.uBary.value;
-    sliceMesh.visible = fieldDynamic && uniforms.uClip.value < HALF;
+    sliceMesh.visible = uniforms.uClip.value < HALF;
     if(sliceMesh.visible){
       sliceMesh.position.set(B.x + uniforms.uClip.value, B.y, B.z);
       sliceMesh.scale.set(HALF*2, HALF*2, 1);
     }
-    sliceMeshY.visible = fieldDynamic && uniforms.uClipY.value < HALF;
+    sliceMeshY.visible = uniforms.uClipY.value < HALF;
     if(sliceMeshY.visible){
       sliceMeshY.position.set(B.x, B.y + uniforms.uClipY.value, B.z);
       sliceMeshY.scale.set(HALF*2, HALF*2, 1);
