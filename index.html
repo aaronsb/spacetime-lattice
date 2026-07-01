@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
-<title>Volumetric Spacetime Lattice</title>
+<title>Spacetime Lattice — Dynamic Field Prototype</title>
 <style>
   :root{
     --void:#050308;
@@ -28,6 +28,15 @@
     padding:16px 16px 14px;overflow-y:auto;
     box-shadow:0 20px 60px rgba(0,0,0,.55);
   }
+  /* themed scrollbars (panel + mass list) */
+  #panel,#massList{scrollbar-width:thin;scrollbar-color:var(--violet-dim) transparent}
+  #panel::-webkit-scrollbar,#massList::-webkit-scrollbar{width:6px}
+  #panel::-webkit-scrollbar-track,#massList::-webkit-scrollbar-track{background:transparent}
+  #panel::-webkit-scrollbar-thumb,#massList::-webkit-scrollbar-thumb{
+    background:var(--violet-dim);border-radius:0;
+    box-shadow:0 0 6px rgba(180,139,255,.35)}
+  #panel::-webkit-scrollbar-thumb:hover,#massList::-webkit-scrollbar-thumb:hover{
+    background:var(--violet)}
   #panel h1{
     font-size:11px;font-weight:600;letter-spacing:.22em;text-transform:uppercase;
     color:var(--violet);margin-bottom:2px;
@@ -82,12 +91,17 @@
     font-size:10px;letter-spacing:.12em;color:var(--violet-dim);text-transform:uppercase;
     pointer-events:none;text-align:center;line-height:1.6}
   #fps{position:fixed;top:14px;right:16px;font-size:10px;letter-spacing:.1em;color:var(--violet-dim)}
+  #chirp{position:fixed;right:16px;bottom:14px;width:280px;height:66px;
+    background:var(--panel);border:1px solid var(--line);backdrop-filter:blur(14px)}
+  #chirpLabel{position:fixed;right:18px;bottom:84px;font-size:9px;letter-spacing:.16em;
+    color:var(--violet-dim);text-transform:uppercase;pointer-events:none}
   #laserInfo{position:fixed;bottom:38px;left:50%;transform:translateX(-50%);display:none;
     font-size:11px;letter-spacing:.14em;color:#8ef0ff;text-transform:uppercase;
     text-shadow:0 0 12px rgba(102,240,255,.6);pointer-events:none}
   @media(max-width:560px){
     #panel{width:calc(100% - 20px);left:10px;top:10px;max-height:56%}
     #hint{display:none}
+    #chirp,#chirpLabel{display:none}
   }
 </style>
 </head>
@@ -95,8 +109,8 @@
 <div id="app"></div>
 
 <div id="panel">
-  <h1>Spacetime Lattice</h1>
-  <div class="sub">A 1000³ coordinate volume. Grid nodes are drawn toward the central mass — where they crowd, space glows.</div>
+  <h1>Spacetime Lattice · Field</h1>
+  <div class="sub">Prototype: the field is a 64³ wave-equation cellular automaton evolved on the GPU. Masses stir it, disturbances propagate at finite speed — the binary paints spiral wavefronts.</div>
 
   <div class="grp">
     <label>Compression model</label>
@@ -109,13 +123,35 @@
   </div>
 
   <div class="grp">
+    <label>Field engine</label>
+    <div class="seg" id="fieldMode">
+      <button data-f="0">Analytic</button>
+      <button data-f="1" class="on">Dynamic</button>
+    </div>
+    <div class="sub" style="margin:8px 0 0">Dynamic: φ evolves by ∂²φ/∂t² = c²(∇²φ + ρ). Analytic: instant action-at-a-distance (original).</div>
+    <label style="margin-top:13px">Wave speed <span class="val" id="waveCVal">0.15 cells/step</span></label>
+    <input type="range" id="waveC" min="0" max="100" value="20" />
+    <label style="margin-top:13px">Warp gain <span class="val" id="dispGainVal">1.3k</span></label>
+    <input type="range" id="dispGain" min="0" max="100" value="50" />
+    <label style="margin-top:13px">Wave glow <span class="val" id="glowGainVal">63</span></label>
+    <input type="range" id="glowGain" min="0" max="100" value="50" />
+    <label style="margin-top:13px">Field damping <span class="val" id="dampVal">0.08%</span></label>
+    <input type="range" id="fieldDamp" min="0" max="100" value="20" />
+    <label style="margin-top:13px">GW braking <span class="val" id="rrVal">10^2.7×</span></label>
+    <input type="range" id="rrGain" min="0" max="100" value="45" />
+    <div class="seg" style="margin-top:13px"><button id="flushField">Flush field</button></div>
+  </div>
+
+  <div class="grp">
     <label>Warp multiplier <span class="val" id="sVal">55%</span></label>
     <input type="range" id="strength" min="0" max="100" value="55" />
   </div>
 
   <div class="grp">
-    <label>Cross-section <span class="val" id="cVal">off</span></label>
+    <label>Cross-section X <span class="val" id="cVal">off</span></label>
     <input type="range" id="clip" min="0" max="100" value="100" />
+    <label style="margin-top:13px">Cross-section Y <span class="val" id="cValY">off</span></label>
+    <input type="range" id="clipY" min="0" max="100" value="100" />
   </div>
 
   <div class="grp">
@@ -163,6 +199,8 @@
 
 <div id="fps"></div>
 <div id="laserInfo"></div>
+<div id="chirpLabel">strain probe h(t)</div>
+<canvas id="chirp" width="280" height="66"></canvas>
 <div id="hint">drag to orbit · scroll to zoom</div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
@@ -193,9 +231,44 @@ const camera = new THREE.PerspectiveCamera(48, window.innerWidth/window.innerHei
 // In the weak field, potentials add linearly, so summing per-body displacements is
 // the honest thing to do. `comp` (0..1) reports total warp depth, used for colour.
 const NB = 16;                      // max simultaneous masses
+// Field lattice: FN cells/axis, packed as an FTILE×FTILE atlas of z-slices.
+const FN = 64, FTILE = 8, FSIZE = FN*FTILE;   // 64³ volume → 512×512 atlas
+// Samples the baked field texture: grad(phi) in world units (xyz) + |pi| (w).
+// Shared by the warp shaders and the cross-section scan sheet.
+const FIELD_SAMPLE_GLSL = `
+uniform sampler2D uGrad;
+uniform float uFHalf;
+uniform vec3 uFOrigin;               // world center of the (barycenter-following) field box
+vec4 fieldSlice(float z, vec2 t){
+  float tx = mod(z, ${FTILE}.0), ty = floor(z / ${FTILE}.0);
+  vec2 uv = (vec2(tx,ty)*${FN}.0 + 0.5 + t*(${FN}.0-1.0)) / ${FSIZE}.0;
+  return texture2D(uGrad, uv);
+}
+vec4 fieldSample(vec3 p){            // manual trilinear across the slice atlas
+  vec3 t = (p - uFOrigin)/(2.0*uFHalf) + 0.5;
+  if(any(lessThan(t, vec3(0.0))) || any(greaterThan(t, vec3(1.0)))) return vec4(0.0);
+  float fz = t.z*(${FN}.0-1.0);
+  float z0 = floor(fz);
+  float z1 = min(z0+1.0, ${FN}.0-1.0);
+  return mix(fieldSlice(z0, t.xy), fieldSlice(z1, t.xy), fz-z0);
+}`;
 const WARP_GLSL = `
 // uniforms (uStrength, uModel, uCount, uPos[], uMass[]) declared in each preamble
+// Dynamic-field path: displacement comes from the wave-CA field texture.
+// Analytic path kept for A/B comparison.
+uniform int uUseField;
+uniform float uDispGain; uniform float uGlowGain;
+${FIELD_SAMPLE_GLSL}
 vec3 warp(vec3 p, out float comp){
+  if(uUseField == 1){
+    vec4 g = fieldSample(p);
+    vec3 fdisp = uDispGain * g.xyz;          // pull down the potential gradient
+    float fl = length(fdisp);
+    fdisp *= 1.0/(1.0 + fl/220.0);           // same soft saturation as analytic
+    fl = length(fdisp);
+    comp = clamp(fl/240.0 + uGlowGain*g.w, 0.0, 1.0);
+    return p + fdisp;
+  }
   vec3 disp = vec3(0.0);
   for(int i=0;i<${NB};i++){
     if(i >= uCount) break;
@@ -242,7 +315,14 @@ const uniforms = {
   uSize:{value:2.4},
   uBright:{value:1.0},                 // grid/point brightness multiplier
   uMinSize:{value:2.0},                // point-size floor so far points don't vanish
-  uClip:{value:HALF+10}   // reveal plane on +x (relative to bary); >= HALF = off
+  uClip:{value:HALF+10},  // reveal plane on +x (relative to bary); >= HALF = off
+  uClipY:{value:HALF+10}, // reveal plane on +y (top-to-bottom cut)
+  uFOrigin:{value:new THREE.Vector3()},
+  uUseField:{value:1},    // 0 = analytic warp, 1 = dynamic wave field
+  uGrad:{value:null},     // grad(phi)+|pi| texture, baked per frame
+  uFHalf:{value:HALF},    // field box half-width (world units)
+  uDispGain:{value:1265}, // world displacement per unit of grad(phi)
+  uGlowGain:{value:63}    // colour response to |pi| (wavefront glow)
 };
 
 // wrap a lattice site into the box centred on the barycenter, so as the box
@@ -255,6 +335,267 @@ vec3 wrapToBary(vec3 p){
   return uBary - vec3(uBox*0.5) + rel;
 }`;
 
+// ------------------------------------------------------------------ DYNAMIC FIELD (wave CA)
+// phi lives on a world-anchored FN³ lattice packed as a 2D atlas of z-slices in a
+// float render target. Each frame, FSUB leapfrog substeps advance the wave equation
+//   pi  += c²·(lap(phi) + rho) − damp·pi ;  phi += pi        (dx = dt = 1, cell units)
+// so disturbances propagate at c cells/substep — finite speed, hence waves. rho is a
+// Gaussian splat of each mass. A sponge layer at the box walls absorbs outgoing
+// waves instead of reflecting them. A second pass bakes grad(phi) (world units) +
+// |pi| into gradRT, which the point/line/trail shaders sample instead of the
+// analytic sum. The near field settles into the familiar 1/r well on its own; an
+// orbiting binary sheds spiral ripples with no wave-specific code anywhere.
+let fieldDynamic = true;
+const FSUB = 3;                       // wave substeps per frame
+let FHALF = HALF;                     // field box half-width (world), synced to volume
+const fieldPar = { c:0.15, damp:0.0008 };
+
+const glOK = renderer.capabilities.isWebGL2 &&
+             !!renderer.getContext().getExtension('EXT_color_buffer_float');
+function mkFieldRT(type, filter){
+  return new THREE.WebGLRenderTarget(FSIZE, FSIZE, {
+    type, format:THREE.RGBAFormat, minFilter:filter, magFilter:filter,
+    depthBuffer:false, stencilBuffer:false});
+}
+let fieldA = mkFieldRT(THREE.FloatType, THREE.NearestFilter);
+let fieldB = mkFieldRT(THREE.FloatType, THREE.NearestFilter);
+// half-float: linear-filterable in core WebGL2 (full float needs an extra ext)
+const gradRT = mkFieldRT(THREE.HalfFloatType, THREE.LinearFilter);
+
+const fsCam = new THREE.OrthographicCamera(-1,1,1,-1,0,1);
+const fsScene = new THREE.Scene();
+const FETCH_GLSL = `
+const float FN=${FN}.0, FT=${FTILE}.0, FS=${FSIZE}.0;
+uniform sampler2D uState;
+vec2 fetchF(vec3 c){                  // c = integer cell coords; outside box = 0 (Dirichlet)
+  if(any(lessThan(c, vec3(0.0))) || any(greaterThan(c, vec3(FN-1.0)))) return vec2(0.0);
+  float tx = mod(c.z, FT), ty = floor(c.z/FT);
+  return texture2D(uState, (vec2(tx,ty)*FN + c.xy + 0.5)/FS).rg;
+}
+vec3 cellOf(vec2 frag){               // atlas fragment -> (x,y,z) cell
+  vec2 fc = floor(frag);
+  vec2 tile = floor(fc/FN);
+  return vec3(mod(fc,FN), tile.y*FT + tile.x);
+}`;
+const simMat = new THREE.ShaderMaterial({
+  uniforms:{
+    uState:{value:null}, uC2:{value:fieldPar.c*fieldPar.c}, uDamp:{value:fieldPar.damp},
+    uCountF:{value:0}, uPosF:{value:Array.from({length:NB},()=>new THREE.Vector3())},
+    uMassF:{value:new Array(NB).fill(0)}
+  },
+  depthTest:false, depthWrite:false,
+  vertexShader:`void main(){ gl_Position = vec4(position.xy, 0.0, 1.0); }`,
+  fragmentShader:`
+    ${FETCH_GLSL}
+    uniform float uC2, uDamp;
+    uniform int uCountF; uniform vec3 uPosF[${NB}]; uniform float uMassF[${NB}];
+    void main(){
+      vec3 c = cellOf(gl_FragCoord.xy);
+      vec2 s = fetchF(c);             // r = phi, g = pi
+      float lap = fetchF(c+vec3(1.,0.,0.)).r + fetchF(c-vec3(1.,0.,0.)).r
+                + fetchF(c+vec3(0.,1.,0.)).r + fetchF(c-vec3(0.,1.,0.)).r
+                + fetchF(c+vec3(0.,0.,1.)).r + fetchF(c-vec3(0.,0.,1.)).r - 6.0*s.r;
+      float rho = 0.0;                // mass density source, sigma = 1.6 cells
+      for(int i=0;i<${NB};i++){
+        if(i >= uCountF) break;
+        vec3 d = c - uPosF[i];
+        float r2 = dot(d,d);
+        if(r2 < 30.0) rho += uMassF[i]*exp(-r2/5.12);
+      }
+      float edge = min(min(min(c.x, FN-1.0-c.x), min(c.y, FN-1.0-c.y)),
+                       min(c.z, FN-1.0-c.z));
+      // absorbing sponge: wide + gentle-onset (quadratic) — an abrupt damping ramp
+      // is itself an impedance step that reflects; this one eats outgoing waves
+      // across 10 cells with negligible bounce-back. Statics unaffected (pi-only).
+      float sp = 1.0 - smoothstep(0.0, 10.0, edge);
+      float damp = uDamp + 0.30*sp*sp;
+      float pi2  = s.g + uC2*(lap + rho) - damp*s.g;
+      gl_FragColor = vec4(s.r + pi2, pi2, 0.0, 0.0);
+    }`
+});
+// scrolls the field contents by a whole-cell offset (used to re-center the box on
+// the barycenter without resampling smear; vacated cells enter as empty space)
+const shiftMat = new THREE.ShaderMaterial({
+  uniforms:{ uState:{value:null}, uShiftC:{value:new THREE.Vector3()} },
+  depthTest:false, depthWrite:false,
+  vertexShader:`void main(){ gl_Position = vec4(position.xy, 0.0, 1.0); }`,
+  fragmentShader:`
+    ${FETCH_GLSL}
+    uniform vec3 uShiftC;
+    void main(){
+      vec2 v = fetchF(cellOf(gl_FragCoord.xy) + uShiftC);
+      gl_FragColor = vec4(v, 0.0, 0.0);
+    }`
+});
+const gradMat = new THREE.ShaderMaterial({
+  uniforms:{ uState:{value:null}, uInv2Dx:{value:0} },
+  depthTest:false, depthWrite:false,
+  vertexShader:`void main(){ gl_Position = vec4(position.xy, 0.0, 1.0); }`,
+  fragmentShader:`
+    ${FETCH_GLSL}
+    uniform float uInv2Dx;            // 1/(2*dx_world): cell grad -> world grad
+    void main(){
+      vec3 c = cellOf(gl_FragCoord.xy);
+      vec3 g = vec3(
+        fetchF(c+vec3(1.,0.,0.)).r - fetchF(c-vec3(1.,0.,0.)).r,
+        fetchF(c+vec3(0.,1.,0.)).r - fetchF(c-vec3(0.,1.,0.)).r,
+        fetchF(c+vec3(0.,0.,1.)).r - fetchF(c-vec3(0.,0.,1.)).r) * uInv2Dx;
+      gl_FragColor = vec4(g, abs(fetchF(c).g));
+    }`
+});
+const fsQuad = new THREE.Mesh(new THREE.PlaneGeometry(2,2), simMat);
+fsQuad.frustumCulled = false;
+fsScene.add(fsQuad);
+
+function clearField(){
+  renderer.setClearColor(0x000000, 0);
+  [fieldA, fieldB, gradRT].forEach(rt=>{ renderer.setRenderTarget(rt); renderer.clear(); });
+  renderer.setRenderTarget(null);
+  renderer.setClearColor(0x050308, 1);
+  uniforms.uGrad.value = gradRT.texture;
+}
+const fieldOrigin = new THREE.Vector3(); // world center of the field box, cell-snapped
+const _fBary = new THREE.Vector3();
+function stepField(){
+  const u = simMat.uniforms;
+  const dx = (FHALF*2)/(FN-1);
+  // follow the OBSERVED box (uBary: live barycenter, or frozen when tracking is
+  // off) — not the raw barycenter — so the computed wave volume stays glued to
+  // the grid space on screen. When it crosses a cell boundary, scroll the field
+  // contents by whole cells so in-flight waves stay world-consistent.
+  _fBary.copy(uniforms.uBary.value);
+  const dcx = Math.round((_fBary.x - fieldOrigin.x)/dx),
+        dcy = Math.round((_fBary.y - fieldOrigin.y)/dx),
+        dcz = Math.round((_fBary.z - fieldOrigin.z)/dx);
+  if(dcx||dcy||dcz){
+    shiftMat.uniforms.uShiftC.value.set(dcx, dcy, dcz);
+    shiftMat.uniforms.uState.value = fieldA.texture;
+    fsQuad.material = shiftMat;
+    renderer.setRenderTarget(fieldB);
+    renderer.render(fsScene, fsCam);
+    const t = fieldA; fieldA = fieldB; fieldB = t;
+    fieldOrigin.x += dcx*dx; fieldOrigin.y += dcy*dx; fieldOrigin.z += dcz*dx;
+  }
+  uniforms.uFOrigin.value.copy(fieldOrigin);
+  u.uCountF.value = Math.min(bodies.length, NB);
+  const s = (FN-1)/(FHALF*2);         // world -> cell coords
+  for(let i=0;i<bodies.length && i<NB;i++){
+    const p = bodies[i].pos;
+    u.uPosF.value[i].set((p.x-fieldOrigin.x+FHALF)*s, (p.y-fieldOrigin.y+FHALF)*s,
+                         (p.z-fieldOrigin.z+FHALF)*s);
+    u.uMassF.value[i] = bodies[i].mass;
+  }
+  fsQuad.material = simMat;
+  for(let k=0;k<FSUB;k++){
+    u.uState.value = fieldA.texture;
+    renderer.setRenderTarget(fieldB);
+    renderer.render(fsScene, fsCam);
+    const t = fieldA; fieldA = fieldB; fieldB = t;
+  }
+  fsQuad.material = gradMat;
+  gradMat.uniforms.uState.value = fieldA.texture;
+  gradMat.uniforms.uInv2Dx.value = (FN-1)/(4*FHALF);   // 1/(2*dx)
+  renderer.setRenderTarget(gradRT);
+  renderer.render(fsScene, fsCam);
+  renderer.setRenderTarget(null);
+  uniforms.uGrad.value = gradRT.texture;
+}
+if(glOK) clearField();
+else { fieldDynamic = false; uniforms.uUseField.value = 0;
+       console.warn('WebGL2 float render targets unavailable — dynamic field disabled'); }
+
+// ------------------------------------------------------------------ CHIRP STRIP-CHART
+// pi = dphi/dt sampled at a fixed probe cell in the wave zone (a one-texel readback
+// per frame) and drawn as a scrolling strain trace — the LIGO chart. During an
+// inspiral both the frequency and amplitude climb, then the merger burst rings down.
+const chirpCv = document.getElementById('chirp');
+const chirpCtx = chirpCv.getContext('2d');
+const CH_N = 280;
+const chirpData = new Float32Array(CH_N);
+const _probePx = new Float32Array(4);
+let chirpMax = 1e-6;
+const PROBE = { x:FN-12, y:FN>>1, z:FN>>1 };            // wave zone, inside the sponge
+const probeAX = (PROBE.z % FTILE)*FN + PROBE.x;         // atlas coords of the probe texel
+const probeAY = Math.floor(PROBE.z / FTILE)*FN + PROBE.y;
+function updateChirp(){
+  renderer.readRenderTargetPixels(fieldA, probeAX, probeAY, 1, 1, _probePx);
+  chirpData.copyWithin(0, 1);
+  chirpData[CH_N-1] = _probePx[1];
+  chirpMax = Math.max(chirpMax*0.9995, Math.abs(_probePx[1]), 1e-6);  // slow auto-gain
+  const w = chirpCv.width, h = chirpCv.height, mid = h/2;
+  chirpCtx.clearRect(0, 0, w, h);
+  chirpCtx.strokeStyle = 'rgba(180,139,255,0.25)';
+  chirpCtx.beginPath(); chirpCtx.moveTo(0, mid); chirpCtx.lineTo(w, mid); chirpCtx.stroke();
+  chirpCtx.strokeStyle = '#8ef0ff';
+  chirpCtx.lineWidth = 1;
+  chirpCtx.beginPath();
+  for(let i=0;i<CH_N;i++){
+    const y = mid - (chirpData[i]/chirpMax)*(mid-4);
+    if(i) chirpCtx.lineTo(i, y); else chirpCtx.moveTo(0, y);
+  }
+  chirpCtx.stroke();
+}
+if(!glOK){ chirpCv.style.display='none'; document.getElementById('chirpLabel').style.display='none'; }
+
+// ------------------------------------------------------------------ FIELD SCAN SHEET
+// When the cross-section is active, paint the field directly onto the cut plane —
+// a "magnet viewing film" for gravity. Colour = the volume's own ramp (|grad phi|
+// + wave glow), plus log-spaced iso-|g| contour bands. Sweeping the clip slider
+// scans the sheet through the volume.
+// The cut face is a tessellated surface: its vertices run through the SAME warp()
+// as the lattice points, so the face funnels into the wells and physically ripples
+// as wavefronts cross it. Polygons are filled solid with the points' colour ramp;
+// log-spaced iso-displacement contour bands give the magnet-film read. Works in
+// both Analytic and Dynamic modes (warp() branches internally).
+const SLICE_PREAMBLE = `
+  uniform float uStrength; uniform int uModel; uniform int uCount;
+  uniform vec3 uPos[16]; uniform float uMass[16];`;
+const sliceMat = new THREE.ShaderMaterial({
+  uniforms,                        // shared master uniform set
+  side:THREE.DoubleSide,
+  vertexShader:`
+    ${SLICE_PREAMBLE}
+    varying vec3 vWorld; varying float vComp;
+    ${WARP_GLSL}
+    void main(){
+      vec4 w = modelMatrix * vec4(position, 1.0);
+      vWorld = w.xyz;
+      float comp;
+      vec3 wp = warp(w.xyz, comp);
+      vComp = comp;
+      gl_Position = projectionMatrix * viewMatrix * vec4(wp, 1.0);
+    }`,
+  fragmentShader:`
+    ${SLICE_PREAMBLE}
+    uniform float uBright;
+    varying vec3 vWorld; varying float vComp;
+    ${WARP_GLSL}
+    ${COLOR_GLSL}
+    void main(){
+      float comp;
+      vec3 wp = warp(vWorld, comp);           // per-pixel field value on the cut
+      float mag = length(wp - vWorld);        // node displacement magnitude here
+      vec3 col = ramp(comp) * (0.22 + 0.78*comp);
+      float line = 0.0;                       // iso-displacement contour bands
+      if(mag > 1e-4){
+        float lg = log2(mag)*2.2;
+        float d = min(fract(lg), 1.0-fract(lg));
+        line = 1.0 - smoothstep(0.0, 0.09, d);
+      }
+      gl_FragColor = vec4((col + vec3(0.22)*line) * uBright, 1.0);
+    }`
+});
+const sliceMesh = new THREE.Mesh(new THREE.PlaneGeometry(1,1,96,96), sliceMat);
+sliceMesh.rotation.y = Math.PI/2;      // normal +x: the sheet spans y/z at the cut
+sliceMesh.frustumCulled = false;
+sliceMesh.visible = false;
+scene.add(sliceMesh);
+const sliceMeshY = new THREE.Mesh(sliceMesh.geometry, sliceMat);
+sliceMeshY.rotation.x = -Math.PI/2;    // normal +y: the sheet spans x/z at the cut
+sliceMeshY.frustumCulled = false;
+sliceMeshY.visible = false;
+scene.add(sliceMeshY);
+
 // ------------------------------------------------------------------ POINT VOLUME
 let pointsMesh = null;
 const pointMat = new THREE.ShaderMaterial({
@@ -264,14 +605,14 @@ const pointMat = new THREE.ShaderMaterial({
   blending:THREE.AdditiveBlending,
   vertexShader:`
     uniform float uStrength; uniform int uModel; uniform int uCount;
-    uniform vec3 uPos[16]; uniform float uMass[16]; uniform float uSize; uniform float uClip; uniform float uMinSize;
+    uniform vec3 uPos[16]; uniform float uMass[16]; uniform float uSize; uniform float uClip; uniform float uClipY; uniform float uMinSize;
     varying vec3 vCol; varying float vHide;
     ${WRAP_GLSL}
     ${WARP_GLSL}
     ${COLOR_GLSL}
     void main(){
       vec3 base = wrapToBary(position);
-      vHide = (base.x - uBary.x) > uClip ? 1.0 : 0.0;
+      vHide = ((base.x - uBary.x) > uClip || (base.y - uBary.y) > uClipY) ? 1.0 : 0.0;
       float comp;
       vec3 wp = warp(base, comp);
       vCol = ramp(comp);
@@ -322,13 +663,13 @@ const lineMat = new THREE.ShaderMaterial({
   blending:THREE.AdditiveBlending,
   vertexShader:`
     uniform float uStrength; uniform int uModel; uniform int uCount;
-    uniform vec3 uPos[16]; uniform float uMass[16]; uniform float uClip; uniform vec3 uBary;
+    uniform vec3 uPos[16]; uniform float uMass[16]; uniform float uClip; uniform float uClipY; uniform vec3 uBary;
     varying vec3 vCol; varying float vHide;
     ${WARP_GLSL}
     ${COLOR_GLSL}
     void main(){
       vec3 base = position;                  // cage is world-anchored (no wrap → no line seam)
-      vHide = (base.x - uBary.x) > uClip ? 1.0 : 0.0;
+      vHide = ((base.x - uBary.x) > uClip || (base.y - uBary.y) > uClipY) ? 1.0 : 0.0;
       float comp;
       vec3 wp = warp(base, comp);
       vCol = ramp(comp*0.9);
@@ -448,7 +789,11 @@ function makeTrail(colorHex){
   geo.setDrawRange(0,0);
   const tu = {                                   // share the live field-uniform objects
     uStrength:uniforms.uStrength, uModel:uniforms.uModel, uCount:uniforms.uCount,
-    uPos:uniforms.uPos, uMass:uniforms.uMass, uColor:{value:new THREE.Color(colorHex)}
+    uPos:uniforms.uPos, uMass:uniforms.uMass,
+    uUseField:uniforms.uUseField, uGrad:uniforms.uGrad, uFHalf:uniforms.uFHalf,
+    uFOrigin:uniforms.uFOrigin,
+    uDispGain:uniforms.uDispGain, uGlowGain:uniforms.uGlowGain,
+    uColor:{value:new THREE.Color(colorHex)}
   };
   const mat = new THREE.ShaderMaterial({
     uniforms:tu, transparent:true, depthWrite:false, blending:THREE.AdditiveBlending,
@@ -534,10 +879,17 @@ function removeBodyById(id){
   bodies.splice(i,1);
   syncBodyUniforms();
 }
+// default scene: an equal-mass circular binary — the simplest system that radiates.
+function spawnBinary(){
+  const d = 120, ui = MASS_UI_DEFAULT;
+  const v = Math.sqrt(SG*(2*uiToMass(ui))/d)/2;   // circular mutual orbit
+  addBody(new THREE.Vector3(-d/2,0,0), new THREE.Vector3(0,0,-v), ui);
+  addBody(new THREE.Vector3( d/2,0,0), new THREE.Vector3(0,0, v), ui);
+}
 function resetBodies(){
   while(bodies.length) removeBody(bodies.pop());
   while(staged.length) freeColor(staged.pop().colorSlot);
-  addBody(new THREE.Vector3(0,0,0), new THREE.Vector3(0,0,0), MASS_UI_DEFAULT);
+  spawnBinary();
   syncBodyUniforms();
 }
 // Staging: a new mass first appears here (inert — not in the sim, no gravity/warp).
@@ -604,8 +956,55 @@ function stepGravity(dt){
   accel();
   for(let i=0;i<nB;i++) bodies[i].vel.addScaledVector(_acc[i], dt*0.5);
 }
-addBody(new THREE.Vector3(0,0,0), new THREE.Vector3(0,0,0), MASS_UI_DEFAULT);
+spawnBinary();
 syncBodyUniforms();
+
+// ---- GRAVITATIONAL-WAVE BRAKING + MERGERS
+// The field visualizes the radiation; this term does the energy bookkeeping. Per
+// pair, quadrupole power P = (32/5) G³ m1²m2²(m1+m2) / (c⁵ r⁵) with c = the wave
+// field's actual propagation speed — then COM-frame velocities are damped so the
+// system loses exactly that energy. At true scale GW damping is invisibly weak
+// (that's physics), so the slider amplifies it. Orbits decay, the binary
+// inspirals, and on contact the bodies merge — momentum-conserving — which slams
+// the field with a burst.
+let rrMult = Math.pow(10, 2.7);   // matches the GW-braking slider default
+function lightSpeedWorld(){ return fieldPar.c * ((FHALF*2)/(FN-1)) * FSUB / DT; }
+const _vB = new THREE.Vector3();
+function applyRadReaction(dt){
+  if(rrMult<=0 || bodies.length<2) return;
+  let M=0; _vB.set(0,0,0);
+  for(const b of bodies){ _vB.addScaledVector(b.vel, b.mass); M+=b.mass; }
+  _vB.multiplyScalar(1/M);
+  let T=0;
+  for(const b of bodies) T += 0.5*b.mass*b.vel.distanceToSquared(_vB);
+  if(T<1e-6) return;
+  const C5 = Math.pow(lightSpeedWorld(), 5);
+  let P=0;
+  for(let i=0;i<bodies.length;i++) for(let j=i+1;j<bodies.length;j++){
+    const mi=bodies[i].mass, mj=bodies[j].mass;
+    const r = Math.max(bodies[i].pos.distanceTo(bodies[j].pos), 25);
+    P += (32/5)*Math.pow(SG,3)*mi*mi*mj*mj*(mi+mj)/(C5*Math.pow(r,5));
+  }
+  const k = Math.min(P*rrMult/(2*T), 0.5/dt);   // drain rate that removes exactly P·rr
+  const f = 1 - k*dt;
+  for(const b of bodies) b.vel.sub(_vB).multiplyScalar(f).add(_vB);
+}
+function radOf(m){ return 8 + 8*Math.cbrt(Math.max(m,0.02)); }
+function checkMergers(){
+  for(let i=0;i<bodies.length;i++) for(let j=i+1;j<bodies.length;j++){
+    const a=bodies[i], b=bodies[j];
+    if(a.pos.distanceTo(b.pos) < 0.6*(radOf(a.mass)+radOf(b.mass))){
+      const M = a.mass+b.mass;
+      const pos = a.pos.clone().multiplyScalar(a.mass/M).addScaledVector(b.pos, b.mass/M);
+      const vel = a.vel.clone().multiplyScalar(a.mass/M).addScaledVector(b.vel, b.mass/M);
+      const ui = a.uiMass + b.uiMass;           // uiToMass is linear -> mass conserved
+      removeBodyById(a.id); removeBodyById(b.id);
+      addBody(pos, vel, ui);
+      syncBodyUniforms(); renderMassList(); updateBodyCount();
+      return;                                   // one merger per frame
+    }
+  }
+}
 
 // ------------------------------------------------------------------ LASER (geodesic photon)
 // A ray fired from the camera through the cursor. In flat space it would be a
@@ -631,6 +1030,31 @@ scene.add(beamGroup);
 const raycaster = new THREE.Raycaster();
 camera.updateProjectionMatrix();
 
+// ---- CPU field probe: read the sim state back so the photon can integrate
+// through the LIVE field — retardation, passing wavefronts, merger bursts — a
+// chirp sensor. Readback happens only while the laser is on.
+const fieldBuf = { data:new Float32Array(FSIZE*FSIZE*4), ready:false };
+function readField(){
+  renderer.readRenderTargetPixels(fieldA, 0, 0, FSIZE, FSIZE, fieldBuf.data);
+  fieldBuf.ready = true;
+}
+function texAt(x,y,z,ch){                 // nearest-texel read of the slice atlas
+  if(x<0||y<0||z<0||x>FN-1||y>FN-1||z>FN-1) return 0;
+  const tx=z%FTILE, ty=(z-tx)/FTILE;
+  return fieldBuf.data[(((ty*FN+y)*FSIZE) + tx*FN + x)*4 + ch];
+}
+function fieldAtWorld(px,py,pz,ch){       // trilinear; ch 0 = phi, 1 = pi
+  const s=(FN-1)/(FHALF*2);
+  const cx=(px-fieldOrigin.x+FHALF)*s, cy=(py-fieldOrigin.y+FHALF)*s, cz=(pz-fieldOrigin.z+FHALF)*s;
+  const x0=Math.floor(cx), y0=Math.floor(cy), z0=Math.floor(cz);
+  const fx=cx-x0, fy=cy-y0, fz=cz-z0;
+  let v=0;
+  for(let k=0;k<2;k++) for(let j=0;j<2;j++) for(let i=0;i<2;i++){
+    const w=(i?fx:1-fx)*(j?fy:1-fy)*(k?fz:1-fz);
+    if(w>1e-6) v += w*texAt(x0+i,y0+j,z0+k,ch);
+  }
+  return v;
+}
 // integrate one photon; returns deflection in degrees (or -1 if captured)
 const _p = new THREE.Vector3(), _d = new THREE.Vector3(), _rhat = new THREE.Vector3(),
       _grad = new THREE.Vector3(), _perp = new THREE.Vector3(), _d0 = new THREE.Vector3();
@@ -639,6 +1063,9 @@ function firePhoton(origin, dir){
   const invSq = (uniforms.uModel.value === 2);
   const Kbase = invSq ? K0*90000.0 : K0*190.0;
   const soft  = invSq ? 40.0 : 22.0;
+  const useField = fieldDynamic && fieldBuf.ready;   // live-field mode
+  const gh = (FHALF*2)/(FN-1);                       // one cell, for finite differences
+  let maxPi = 0;
 
   _p.copy(origin); _d.copy(dir).normalize(); _d0.copy(_d);
   const pos = beamGeo.attributes.position.array;
@@ -647,7 +1074,7 @@ function firePhoton(origin, dir){
   const nB = bodies.length;
 
   for(let step=0; step<MAXPTS && n<MAXPTS; step++){
-    // summed refractive gradient + nearest-mass distance
+    // refractive gradient (analytic sum, or live field) + nearest-mass distance
     _grad.set(0,0,0);
     let nd = 1e9, rFar = _p.length();
     for(let i=0;i<nB;i++){
@@ -655,13 +1082,23 @@ function firePhoton(origin, dir){
       const dx=_p.x-b.pos.x, dy=_p.y-b.pos.y, dz=_p.z-b.pos.z;
       const d = Math.hypot(dx,dy,dz);
       if(d < nd) nd = d;
-      if(d < 0.001) continue;
+      if(useField || d < 0.001) continue;
       const K = Kbase * b.mass;
       let dndr;                                   // dn/dd, negative (n rises toward body)
       if(invSq){ const den=d*d+soft*soft; dndr = -K*2*d/(den*den); }
       else     { const den=d+soft;        dndr = -K/(den*den); }
       const g = dndr / d;                         // (p-body)/d * dndr, packed
       _grad.x += dx*g; _grad.y += dy*g; _grad.z += dz*g;
+    }
+    if(useField){
+      // n = 1 + phi: bend toward higher potential, exactly what the lattice shows
+      const i2=1/(2*gh);
+      _grad.set(
+        (fieldAtWorld(_p.x+gh,_p.y,_p.z,0)-fieldAtWorld(_p.x-gh,_p.y,_p.z,0))*i2,
+        (fieldAtWorld(_p.x,_p.y+gh,_p.z,0)-fieldAtWorld(_p.x,_p.y-gh,_p.z,0))*i2,
+        (fieldAtWorld(_p.x,_p.y,_p.z+gh,0)-fieldAtWorld(_p.x,_p.y,_p.z-gh,0))*i2);
+      const pi = Math.abs(fieldAtWorld(_p.x,_p.y,_p.z,1));
+      if(pi > maxPi) maxPi = pi;
     }
     if(nd < 15){ captured = true; break; }
     const h = Math.min(28, Math.max(4, nd*0.03));
@@ -683,6 +1120,7 @@ function firePhoton(origin, dir){
   const defl = captured ? -1 : THREE.MathUtils.radToDeg(Math.acos(Math.min(1,_d0.dot(_d))));
   const info = document.getElementById('laserInfo');
   info.textContent = (defl < 0 ? 'photon captured by a mass' : 'deflection ' + defl.toFixed(1) + '°')
+                     + (useField ? ' · ripple ' + maxPi.toExponential(1) : '')
                      + (laserFrozen ? ' · locked' : '');
 }
 
@@ -853,6 +1291,42 @@ $('#strength').addEventListener('input',e=>{
   uniforms.uStrength.value=e.target.value/100;
   $('#sVal').textContent=e.target.value+'%';
 });
+// ---- dynamic-field controls
+document.querySelectorAll('#fieldMode button').forEach(b=>b.addEventListener('click',()=>{
+  if(b.dataset.f==='1' && !glOK) return;
+  document.querySelectorAll('#fieldMode button').forEach(x=>x.classList.remove('on'));
+  b.classList.add('on');
+  fieldDynamic = b.dataset.f==='1';
+  uniforms.uUseField.value = fieldDynamic ? 1 : 0;
+  chirpCv.style.display = fieldDynamic ? 'block' : 'none';
+  document.getElementById('chirpLabel').style.display = fieldDynamic ? 'block' : 'none';
+}));
+$('#waveC').addEventListener('input',e=>{
+  const c = 0.05 + (+e.target.value)/100*0.50;    // CFL limit ~0.577
+  fieldPar.c = c; simMat.uniforms.uC2.value = c*c;
+  $('#waveCVal').textContent = c.toFixed(2)+' cells/step';
+});
+$('#dispGain').addEventListener('input',e=>{
+  const g = 200*Math.pow(40, (+e.target.value)/100);    // 200 … 8000
+  uniforms.uDispGain.value = g;
+  $('#dispGainVal').textContent = (g/1000).toFixed(1)+'k';
+});
+$('#glowGain').addEventListener('input',e=>{
+  const g = 4*Math.pow(250, (+e.target.value)/100);     // 4 … 1000
+  uniforms.uGlowGain.value = g;
+  $('#glowGainVal').textContent = ''+Math.round(g);
+});
+$('#fieldDamp').addEventListener('input',e=>{
+  const d = 0.02*Math.pow((+e.target.value)/100, 2);    // 0 … 2% per substep
+  fieldPar.damp = d; simMat.uniforms.uDamp.value = d;
+  $('#dampVal').textContent = (d*100).toFixed(2)+'%';
+});
+$('#rrGain').addEventListener('input',e=>{
+  const v=+e.target.value;
+  rrMult = v===0 ? 0 : Math.pow(10, v/100*6);
+  $('#rrVal').textContent = v===0 ? 'off' : '10^'+(v/100*6).toFixed(1)+'×';
+});
+$('#flushField').addEventListener('click', ()=>{ if(glOK) clearField(); });
 function fmtCount(n){ const c=n*n*n; return n+'³ · '+(c>=1e6?(c/1e6).toFixed(1)+'M':Math.round(c/1000)+'k'); }
 function fmtWidth(w){ return w>=1000 ? (w/1000).toFixed(w>=10000?0:1)+'k' : ''+Math.round(w); }
 function densOf(v){ return Math.round(24 + v/100*86); }      // 24 … 110 points/axis
@@ -861,8 +1335,12 @@ function applyClip(){
   const v=+$('#clip').value;
   uniforms.uClip.value = v>=100 ? HALF+10 : -HALF + (HALF*2)*(v/100);
   $('#cVal').textContent = v>=100 ? 'off' : Math.round((1-v/100)*100)+'% cut';
+  const vy=+$('#clipY').value;
+  uniforms.uClipY.value = vy>=100 ? HALF+10 : -HALF + (HALF*2)*(vy/100);
+  $('#cValY').textContent = vy>=100 ? 'off' : Math.round((1-vy/100)*100)+'% cut';
 }
 $('#clip').addEventListener('input', applyClip);
+$('#clipY').addEventListener('input', applyClip);
 
 // Point density: number of samples per axis (drives compute). Live label, rebuild on release.
 $('#gridDens').addEventListener('input', e=>{ $('#densVal').textContent = fmtCount(densOf(+e.target.value)); });
@@ -878,6 +1356,8 @@ $('#gridVol').addEventListener('input', e=>{ $('#volVal').textContent = fmtWidth
 $('#gridVol').addEventListener('change', e=>{
   HALF = halfOf(+e.target.value);
   uniforms.uBox.value = HALF*2;
+  FHALF = HALF; uniforms.uFHalf.value = FHALF;   // resize field box, restart the field
+  if(glOK) clearField();
   buildPoints(pointRes);
   updateCageSpacing();
   applyClip();
@@ -980,6 +1460,8 @@ function loop(now){
   // advance gravity (4 substeps), including a lone body's straight-line coast
   if(state.sim){
     for(let s=0;s<4;s++) stepGravity(DT/4);
+    applyRadReaction(DT);     // GW energy loss -> inspiral
+    checkMergers();           // contact -> momentum-conserving merger (field burst)
   }
   for(let i=0;i<bodies.length;i++){
     const b=bodies[i];
@@ -988,6 +1470,9 @@ function loop(now){
   }
   syncBodyUniforms();
 
+  // advance the wave field (freezes with the sim — waves hang mid-flight when paused)
+  if(fieldDynamic && state.sim){ stepField(); updateChirp(); }
+
   // barycenter: track it (grid tiles + camera follow → snowfall) or freeze (world frame)
   computeBary(bary);
   if(state.track && !state.place){ uniforms.uBary.value.copy(bary); camTarget.copy(bary); }
@@ -995,12 +1480,30 @@ function loop(now){
   // stream the cage with the box: drop trailing cells, grow leading cells
   if(state.lines && linesMesh) rebuildCage(uniforms.uBary.value);
 
+  // scan sheets ride their cut planes whenever a cross-section is active
+  {
+    const B = uniforms.uBary.value;
+    sliceMesh.visible = uniforms.uClip.value < HALF;
+    if(sliceMesh.visible){
+      sliceMesh.position.set(B.x + uniforms.uClip.value, B.y, B.z);
+      sliceMesh.scale.set(HALF*2, HALF*2, 1);
+    }
+    sliceMeshY.visible = uniforms.uClipY.value < HALF;
+    if(sliceMeshY.visible){
+      sliceMeshY.position.set(B.x, B.y + uniforms.uClipY.value, B.z);
+      sliceMeshY.scale.set(HALF*2, HALF*2, 1);
+    }
+  }
+
   if(state.spin && !state.place) cam.theta += dt*0.12;
   cam.radius += (cam.tRadius-cam.radius)*Math.min(1,dt*8);
   applyCam();
 
   // the beam is a test particle in the current field — re-solve it every frame
-  if(state.laser) reaimPhoton();
+  if(state.laser){
+    if(fieldDynamic && glOK) readField();   // pull the live field for the probe
+    reaimPhoton();
+  }
 
   renderer.render(scene,camera);
   frames++; facc+=dt;

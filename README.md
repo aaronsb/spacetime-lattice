@@ -1,6 +1,6 @@
 # Spacetime Lattice
 
-A real-time, interactive visualization of gravitational spacetime curvature. A 1000³ coordinate volume of grid nodes is drawn toward a central mass — where they crowd, space glows. Built with [three.js](https://threejs.org/) / WebGL.
+A real-time, interactive visualization of gravitational spacetime as a **dynamic simulated medium**. The field is a 64³ wave-equation cellular automaton evolved on the GPU (φ, π in float-texture slice atlases), so gravity propagates at finite speed rather than snapping to an analytic warp. Built with [three.js](https://threejs.org/) / WebGL.
 
 **▶ Live demo: https://aaronsb.github.io/spacetime-lattice/**
 
@@ -8,11 +8,9 @@ A real-time, interactive visualization of gravitational spacetime curvature. A 1
 
 ## About
 
-Grid nodes fold inward following a smooth radial power-law, producing a continuous density gradient that renders curvature as luminance. The instrument panel exposes controls for the lattice, gravity model, and rendering.
+An orbiting binary sheds spiral wavefronts into the lattice; quadrupole-rate energy loss drives inspiral and momentum-conserving mergers. Cross-section sliders paint a "magnet film" scan of the field on the cut plane, the laser probes the live field as a chirp sensor, and a strain strip-chart shows the LIGO-style h(t) trace.
 
-## Dynamic field prototype (`wave.html`)
-
-`wave.html` replaces the analytic warp with a real simulated medium: the field is a 64³ wave-equation cellular automaton evolved on the GPU (φ, π in float-texture slice atlases), so gravity propagates at finite speed. An orbiting binary sheds spiral wavefronts, quadrupole-rate energy loss drives inspiral and momentum-conserving mergers, cross-section sliders paint a "magnet film" scan of the field on the cut plane, the laser probes the live field as a chirp sensor, and a strain strip-chart shows the LIGO-style h(t) trace. An Analytic/Dynamic toggle A/Bs against the original model.
+An **Analytic/Dynamic toggle** A/Bs the live simulation against the original analytic model — a 1000³ coordinate volume of grid nodes drawn toward a central mass along a smooth radial power-law, rendering curvature as luminance where the nodes crowd.
 
 ## Running locally
 
