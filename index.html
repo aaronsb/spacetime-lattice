@@ -1,0 +1,1032 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+<title>Volumetric Spacetime Lattice</title>
+<style>
+  :root{
+    --void:#050308;
+    --violet:#b48bff;
+    --violet-dim:#6a54a0;
+    --hot:#ffb347;
+    --ink:#e8e2f5;
+    --panel:rgba(14,10,22,0.72);
+    --line:rgba(180,139,255,0.18);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%;background:var(--void);color:var(--ink);
+    font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;overflow:hidden;}
+  #app{position:fixed;inset:0}
+  canvas{display:block}
+
+  /* ---- instrument panel ---- */
+  #panel{
+    position:fixed;top:14px;left:14px;width:288px;max-height:calc(100% - 28px);
+    background:var(--panel);backdrop-filter:blur(14px);
+    border:1px solid var(--line);
+    padding:16px 16px 14px;overflow-y:auto;
+    box-shadow:0 20px 60px rgba(0,0,0,.55);
+  }
+  #panel h1{
+    font-size:11px;font-weight:600;letter-spacing:.22em;text-transform:uppercase;
+    color:var(--violet);margin-bottom:2px;
+  }
+  #panel .sub{font-size:10px;letter-spacing:.05em;color:var(--violet-dim);margin-bottom:16px;line-height:1.5}
+  .grp{margin-bottom:15px;padding-bottom:15px;border-bottom:1px solid rgba(180,139,255,.09)}
+  .grp:last-child{border-bottom:none;margin-bottom:0;padding-bottom:0}
+  label{display:block;font-size:10px;letter-spacing:.12em;text-transform:uppercase;
+    color:#a99cc4;margin-bottom:8px;display:flex;justify-content:space-between;align-items:baseline}
+  label .val{color:var(--hot);font-size:11px;letter-spacing:.02em}
+  input[type=range]{-webkit-appearance:none;width:100%;height:2px;background:var(--violet-dim);
+    outline:none;cursor:pointer}
+  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:13px;height:13px;
+    background:var(--violet);border:2px solid var(--void);border-radius:0;cursor:grab;
+    box-shadow:0 0 8px rgba(180,139,255,.7)}
+  input[type=range]::-moz-range-thumb{width:11px;height:11px;background:var(--violet);
+    border:2px solid var(--void);border-radius:0;cursor:grab}
+  .seg{display:flex;gap:0;border:1px solid var(--line)}
+  .seg button{flex:1;background:transparent;border:none;border-right:1px solid var(--line);
+    color:#8f83ab;font-family:inherit;font-size:10px;letter-spacing:.06em;padding:7px 2px;cursor:pointer;
+    text-transform:uppercase;transition:all .15s}
+  .seg button:last-child{border-right:none}
+  .seg button.on{background:var(--violet);color:var(--void);font-weight:600}
+  .seg button:hover:not(.on){color:var(--ink);background:rgba(180,139,255,.08)}
+  .toggles{display:flex;flex-direction:column;gap:9px}
+  .tog{display:flex;align-items:center;justify-content:space-between;font-size:11px;
+    letter-spacing:.04em;color:#c3b9db;cursor:pointer;user-select:none}
+  .tog .sw{width:30px;height:15px;border:1px solid var(--violet-dim);position:relative;transition:.15s}
+  .tog .sw::after{content:"";position:absolute;top:1px;left:1px;width:11px;height:11px;
+    background:var(--violet-dim);transition:.15s}
+  .tog.on .sw{border-color:var(--violet);background:rgba(180,139,255,.12)}
+  .tog.on .sw::after{left:16px;background:var(--violet);box-shadow:0 0 6px var(--violet)}
+  #reset{width:100%;background:transparent;border:1px solid var(--line);color:#a99cc4;
+    font-family:inherit;font-size:10px;letter-spacing:.14em;text-transform:uppercase;
+    padding:9px;cursor:pointer;transition:.15s}
+  #reset:hover{border-color:var(--violet);color:var(--ink)}
+  #massList{margin-top:12px;display:flex;flex-direction:column;gap:7px;max-height:232px;overflow-y:auto}
+  #massList:empty{margin-top:0}
+  .massRow{display:flex;align-items:center;gap:8px}
+  .massSwatch{width:11px;height:11px;flex:0 0 auto;box-shadow:0 0 7px currentColor}
+  .massRow input[type=range]{flex:1;min-width:0}
+  .massNum{font-size:10px;color:var(--hot);width:22px;text-align:right;flex:0 0 auto}
+  .massDel{flex:0 0 auto;background:transparent;border:1px solid var(--line);color:#8f83ab;
+    font-family:inherit;font-size:13px;line-height:1;width:20px;height:20px;cursor:pointer;padding:0;transition:.15s}
+  .massDel:hover{border-color:#ff7a7a;color:#ff7a7a}
+  .massAdd{flex:0 0 auto;background:transparent;border:1px solid var(--violet-dim);color:var(--violet);
+    font-family:inherit;font-size:9px;line-height:1;width:20px;height:20px;cursor:pointer;padding:0;transition:.15s}
+  .massAdd:hover{border-color:var(--violet);background:rgba(180,139,255,.14)}
+  .massRow.staged .massSwatch{background:transparent!important;box-shadow:none;outline:1px dashed currentColor;outline-offset:1px}
+  .massRow.staged .massNum{color:var(--violet)}
+  #hint{position:fixed;bottom:14px;left:50%;transform:translateX(-50%);
+    font-size:10px;letter-spacing:.12em;color:var(--violet-dim);text-transform:uppercase;
+    pointer-events:none;text-align:center;line-height:1.6}
+  #fps{position:fixed;top:14px;right:16px;font-size:10px;letter-spacing:.1em;color:var(--violet-dim)}
+  #laserInfo{position:fixed;bottom:38px;left:50%;transform:translateX(-50%);display:none;
+    font-size:11px;letter-spacing:.14em;color:#8ef0ff;text-transform:uppercase;
+    text-shadow:0 0 12px rgba(102,240,255,.6);pointer-events:none}
+  @media(max-width:560px){
+    #panel{width:calc(100% - 20px);left:10px;top:10px;max-height:56%}
+    #hint{display:none}
+  }
+</style>
+</head>
+<body>
+<div id="app"></div>
+
+<div id="panel">
+  <h1>Spacetime Lattice</h1>
+  <div class="sub">A 1000³ coordinate volume. Grid nodes are drawn toward the central mass — where they crowd, space glows.</div>
+
+  <div class="grp">
+    <label>Compression model</label>
+    <div class="seg" id="model">
+      <button data-m="0" class="on">Warp</button>
+      <button data-m="1">1/r</button>
+      <button data-m="2">1/r²</button>
+    </div>
+    <div class="sub" id="modelDesc" style="margin:8px 0 0">Smooth radial power-law — nodes fold inward with a continuous density gradient.</div>
+  </div>
+
+  <div class="grp">
+    <label>Warp multiplier <span class="val" id="sVal">55%</span></label>
+    <input type="range" id="strength" min="0" max="100" value="55" />
+  </div>
+
+  <div class="grp">
+    <label>Cross-section <span class="val" id="cVal">off</span></label>
+    <input type="range" id="clip" min="0" max="100" value="100" />
+  </div>
+
+  <div class="grp">
+    <label>Masses <span class="val" id="bodyCount">1 / 16</span></label>
+    <div class="seg">
+      <button id="inject">+ Add mass</button>
+      <button id="clearBodies">Reset</button>
+    </div>
+    <div id="massList"></div>
+  </div>
+
+  <div class="grp">
+    <label>Trail length <span class="val" id="trailVal">1.8k ticks</span></label>
+    <input type="range" id="trailLen" min="0" max="100" value="29" />
+  </div>
+
+  <div class="grp">
+    <label>Grid volume <span class="val" id="volVal">1.0k</span></label>
+    <input type="range" id="gridVol" min="0" max="100" value="0" />
+    <label style="margin-top:13px">Point density <span class="val" id="densVal">64³ · 262k</span></label>
+    <input type="range" id="gridDens" min="0" max="100" value="47" />
+    <label style="margin-top:13px">Grid density <span class="val" id="cageVal">17 / axis</span></label>
+    <input type="range" id="cageDensCtl" min="0" max="100" value="29" />
+    <label style="margin-top:13px">Brightness <span class="val" id="brightVal">1.0×</span></label>
+    <input type="range" id="gridBright" min="0" max="100" value="21" />
+    <label style="margin-top:13px">Distance falloff <span class="val" id="fallVal">med</span></label>
+    <input type="range" id="gridFall" min="0" max="100" value="82" />
+  </div>
+
+  <div class="grp toggles">
+    <div class="tog on" data-t="points"><span>Show points</span><span class="sw"></span></div>
+    <div class="tog" data-t="lines"><span>Grid lines</span><span class="sw"></span></div>
+    <div class="tog on" data-t="sim"><span>Run orbit</span><span class="sw"></span></div>
+    <div class="tog on" data-t="trails"><span>Orbit trails</span><span class="sw"></span></div>
+    <div class="tog on" data-t="track"><span>Track barycenter</span><span class="sw"></span></div>
+    <div class="tog on" data-t="spin"><span>Auto-rotate</span><span class="sw"></span></div>
+    <div class="tog" data-t="place"><span>Place orbit</span><span class="sw"></span></div>
+    <div class="tog" data-t="laser"><span>Laser mode</span><span class="sw"></span></div>
+  </div>
+
+  <div class="grp">
+    <button id="reset">Reset view</button>
+  </div>
+</div>
+
+<div id="fps"></div>
+<div id="laserInfo"></div>
+<div id="hint">drag to orbit · scroll to zoom</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(function(){
+'use strict';
+
+let HALF = 500;                   // half the cube width (adjustable "grid volume")
+const RCORN = HALF * Math.sqrt(3);// (unused reference)
+let pointRes = 64;                // points per axis ("point density")
+
+// UI/runtime flags (declared early: bodies are created during setup and read state.trails)
+const state = { points:true, lines:false, spin:true, laser:false, sim:true, trails:true, track:true, place:false };
+
+// ------------------------------------------------------------------ scene
+const app = document.getElementById('app');
+const renderer = new THREE.WebGLRenderer({antialias:true, alpha:false});
+renderer.setPixelRatio(Math.min(window.devicePixelRatio,2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setClearColor(0x050308, 1);
+app.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(48, window.innerWidth/window.innerHeight, 1, 60000);
+
+// ------------------------------------------------------------------ shared warp GLSL
+// Displaces each coordinate node by the SUM of pulls from every mass in the scene.
+// In the weak field, potentials add linearly, so summing per-body displacements is
+// the honest thing to do. `comp` (0..1) reports total warp depth, used for colour.
+const NB = 16;                      // max simultaneous masses
+const WARP_GLSL = `
+// uniforms (uStrength, uModel, uCount, uPos[], uMass[]) declared in each preamble
+vec3 warp(vec3 p, out float comp){
+  vec3 disp = vec3(0.0);
+  for(int i=0;i<${NB};i++){
+    if(i >= uCount) break;
+    vec3 to = uPos[i] - p;
+    float d = length(to);
+    if(d < 0.001) continue;
+    vec3 dir = to / d;
+    float m = uMass[i];
+    float pull;
+    if(uModel == 2)      pull = uStrength * 45000000.0 * m / (d*d + 1500.0); // 1/r^2
+    else if(uModel == 1) pull = uStrength *   260000.0 * m / (d + 40.0);     // 1/r
+    else                 pull = uStrength *    90000.0 * m / (d + 120.0);    // broad well
+    // Smooth saturation toward this mass. dispMag = pull·d/(d+pull) is always < d, so
+    // a node can approach a mass but never cross it — no hard clamp (no shell, no kink)
+    // and no nearest-body switch (no seam between neighbouring masses).
+    disp += dir * (pull * d / (d + pull));
+  }
+  float dl = length(disp);
+  comp = clamp(dl / 240.0, 0.0, 1.0);
+  return p + disp;
+}`;
+
+// colour ramp: cool violet (far) -> magenta -> hot amber -> white (core)
+const COLOR_GLSL = `
+vec3 ramp(float t){
+  vec3 a = vec3(0.34,0.22,0.62);   // deep violet
+  vec3 b = vec3(0.72,0.40,0.95);   // violet-magenta
+  vec3 c = vec3(1.00,0.55,0.30);   // amber
+  vec3 d = vec3(1.00,0.96,0.85);   // white-hot
+  vec3 col = mix(a,b, smoothstep(0.0,0.45,t));
+  col = mix(col,c, smoothstep(0.40,0.80,t));
+  col = mix(col,d, smoothstep(0.82,1.0,t));
+  return col;
+}`;
+
+const uniforms = {
+  uStrength:{value:0.55},
+  uModel:{value:0},
+  uCount:{value:1},
+  uPos:{value:Array.from({length:16},()=>new THREE.Vector3())},
+  uMass:{value:new Array(16).fill(0)},
+  uBary:{value:new THREE.Vector3()},   // grid tiles around this point (barycenter or frozen)
+  uBox:{value:HALF*2},                 // lattice period = full cube width
+  uSize:{value:2.4},
+  uBright:{value:1.0},                 // grid/point brightness multiplier
+  uMinSize:{value:2.0},                // point-size floor so far points don't vanish
+  uClip:{value:HALF+10}   // reveal plane on +x (relative to bary); >= HALF = off
+};
+
+// wrap a lattice site into the box centred on the barycenter, so as the box
+// translates through world space, points stream in on the leading face and out
+// on the trailing one — the "snowfall" of a translating observer.
+const WRAP_GLSL = `
+uniform vec3 uBary; uniform float uBox;
+vec3 wrapToBary(vec3 p){
+  vec3 rel = mod(p - uBary + vec3(uBox*0.5), uBox);
+  return uBary - vec3(uBox*0.5) + rel;
+}`;
+
+// ------------------------------------------------------------------ POINT VOLUME
+let pointsMesh = null;
+const pointMat = new THREE.ShaderMaterial({
+  uniforms,
+  transparent:true,
+  depthWrite:false,
+  blending:THREE.AdditiveBlending,
+  vertexShader:`
+    uniform float uStrength; uniform int uModel; uniform int uCount;
+    uniform vec3 uPos[16]; uniform float uMass[16]; uniform float uSize; uniform float uClip; uniform float uMinSize;
+    varying vec3 vCol; varying float vHide;
+    ${WRAP_GLSL}
+    ${WARP_GLSL}
+    ${COLOR_GLSL}
+    void main(){
+      vec3 base = wrapToBary(position);
+      vHide = (base.x - uBary.x) > uClip ? 1.0 : 0.0;
+      float comp;
+      vec3 wp = warp(base, comp);
+      vCol = ramp(comp);
+      vec4 mv = modelViewMatrix * vec4(wp,1.0);
+      gl_Position = projectionMatrix * mv;
+      gl_PointSize = max(uMinSize, uSize * (1.0 + comp*2.2) * (620.0 / -mv.z));
+    }`,
+  fragmentShader:`
+    uniform float uBright;
+    varying vec3 vCol; varying float vHide;
+    void main(){
+      if(vHide > 0.5) discard;
+      vec2 d = gl_PointCoord - 0.5;
+      float a = smoothstep(0.5,0.0,length(d));   // soft round dot
+      if(a <= 0.001) discard;
+      gl_FragColor = vec4(vCol, a*0.55*uBright);
+    }`
+});
+
+function buildPoints(n){
+  if(pointsMesh){ scene.remove(pointsMesh); pointsMesh.geometry.dispose(); }
+  const step = (HALF*2)/(n-1);
+  const pos = new Float32Array(n*n*n*3);
+  let i=0;
+  for(let x=0;x<n;x++){
+    const px = -HALF + x*step;
+    for(let y=0;y<n;y++){
+      const py = -HALF + y*step;
+      for(let z=0;z<n;z++){
+        pos[i++]=px; pos[i++]=py; pos[i++]=-HALF+z*step;
+      }
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(pos,3));
+  pointsMesh = new THREE.Points(g, pointMat);
+  pointsMesh.frustumCulled = false;
+  scene.add(pointsMesh);
+  pointsMesh.visible = state.points;
+}
+
+// ------------------------------------------------------------------ GRID LINES (coarse, subdivided so curves stay smooth)
+let linesMesh = null;
+const lineMat = new THREE.ShaderMaterial({
+  uniforms,
+  transparent:true,
+  depthWrite:false,
+  blending:THREE.AdditiveBlending,
+  vertexShader:`
+    uniform float uStrength; uniform int uModel; uniform int uCount;
+    uniform vec3 uPos[16]; uniform float uMass[16]; uniform float uClip; uniform vec3 uBary;
+    varying vec3 vCol; varying float vHide;
+    ${WARP_GLSL}
+    ${COLOR_GLSL}
+    void main(){
+      vec3 base = position;                  // cage is world-anchored (no wrap → no line seam)
+      vHide = (base.x - uBary.x) > uClip ? 1.0 : 0.0;
+      float comp;
+      vec3 wp = warp(base, comp);
+      vCol = ramp(comp*0.9);
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(wp,1.0);
+    }`,
+  fragmentShader:`
+    uniform float uBright;
+    varying vec3 vCol; varying float vHide;
+    void main(){
+      if(vHide > 0.5) discard;
+      gl_FragColor = vec4(vCol, 0.5*uBright);
+    }`
+});
+
+// The cage is a WORLD-ALIGNED lattice. Each frame we render only the edges whose
+// full cell lies inside the box centred on the barycenter — so as the box slides,
+// trailing cells drop and leading cells appear (whole-cell pop), and the cage
+// streams along with the point volume instead of sitting at the origin.
+let cageDiv = 16;                 // cells per axis (adjustable "grid density")
+let CAGE_SP  = (HALF*2)/cageDiv;  // cell size
+let CAGE_SUB = 8;                 // subdivisions per edge (auto-thinned as density rises)
+const CAGE_MAX = 1600000;         // vertex cap (worst case at max density stays under this)
+let cagePositions = null, cageKey = null;
+function updateCageSpacing(){
+  CAGE_SP  = (HALF*2)/cageDiv;
+  CAGE_SUB = Math.max(2, Math.round(112/cageDiv));   // finer grid → fewer smoothing points
+  cageKey  = null;
+  if(linesMesh) rebuildCage(uniforms.uBary.value);
+}
+function rebuildCage(center){
+  const sp=CAGE_SP;
+  const kx0=Math.ceil((center.x-HALF)/sp), kx1=Math.floor((center.x+HALF)/sp);
+  const ky0=Math.ceil((center.y-HALF)/sp), ky1=Math.floor((center.y+HALF)/sp);
+  const kz0=Math.ceil((center.z-HALF)/sp), kz1=Math.floor((center.z+HALF)/sp);
+  const key=[kx0,kx1,ky0,ky1,kz0,kz1].join(',');
+  if(key===cageKey) return;       // no cell crossing → geometry unchanged
+  cageKey=key;
+  const a=cagePositions, cap=a.length-6; let w=0;
+  function edge(ax, i, py, pz){    // subdivided edge starting at node index i along axis ax
+    const x0=i*sp;
+    for(let s=0;s<CAGE_SUB;s++){
+      if(w>cap) return;            // never write past the cap (belt-and-braces)
+      const u0=x0+(s/CAGE_SUB)*sp, u1=x0+((s+1)/CAGE_SUB)*sp;
+      if(ax===0){ a[w++]=u0;a[w++]=py;a[w++]=pz; a[w++]=u1;a[w++]=py;a[w++]=pz; }
+      else if(ax===1){ a[w++]=py;a[w++]=u0;a[w++]=pz; a[w++]=py;a[w++]=u1;a[w++]=pz; }
+      else { a[w++]=py;a[w++]=pz;a[w++]=u0; a[w++]=py;a[w++]=pz;a[w++]=u1; }
+    }
+  }
+  for(let iy=ky0; iy<=ky1; iy++) for(let iz=kz0; iz<=kz1; iz++)
+    for(let ix=kx0; ix<kx1; ix++) edge(0, ix, iy*sp, iz*sp);          // x-edges
+  for(let ix=kx0; ix<=kx1; ix++) for(let iz=kz0; iz<=kz1; iz++)
+    for(let iy=ky0; iy<ky1; iy++) edge(1, iy, ix*sp, iz*sp);          // y-edges
+  for(let ix=kx0; ix<=kx1; ix++) for(let iy=ky0; iy<=ky1; iy++)
+    for(let iz=kz0; iz<kz1; iz++) edge(2, iz, ix*sp, iy*sp);          // z-edges
+  linesMesh.geometry.attributes.position.needsUpdate=true;
+  linesMesh.geometry.setDrawRange(0, w/3);
+}
+function buildLines(){
+  cagePositions = new Float32Array(CAGE_MAX*3);
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(cagePositions,3));
+  g.setDrawRange(0,0);
+  linesMesh = new THREE.LineSegments(g, lineMat);
+  linesMesh.frustumCulled = false;
+  scene.add(linesMesh);
+  linesMesh.visible = state.lines;
+  cageKey = null;
+  rebuildCage(uniforms.uBary.value);
+}
+
+// ------------------------------------------------------------------ MASSES (N-body, real gravity)
+// Each body carries a dynamical + warp mass (same value). Pure Newtonian gravity,
+// leapfrog integration → energy conserved, so nothing captures without a 3rd body.
+// No pulsing: emission is steady, because a real mass's well doesn't throb.
+const SG = 46000;        // sim gravitational constant (tuned for a few-second period)
+const SOFT2 = 18*18;     // dynamical softening
+const bodies = [];
+const bary = new THREE.Vector3();       // live mass-weighted barycenter
+const camTarget = new THREE.Vector3();  // point the camera orbits (barycenter or frozen)
+function computeBary(out){
+  out.set(0,0,0); let M=0;
+  for(const b of bodies){ out.addScaledVector(b.pos, b.mass); M+=b.mass; }
+  if(M>0) out.multiplyScalar(1/M);
+}
+// UI mass runs 1..100; the original default (internal 1.0) sits at 50.
+const MASS_UI_DEFAULT = 50;
+const uiToMass = u => u/50;              // internal warp+dynamics mass
+// 16 distinct colours (golden-ratio hue spacing), primary starts warm/amber
+const PALETTE = Array.from({length:16},(_,i)=>{
+  const h=(0.08 + i*0.61803398875)%1;
+  const halo=new THREE.Color().setHSL(h,0.72,0.60);
+  const core=new THREE.Color().setHSL(h,0.55,0.82);
+  return {core:core.getHex(), halo:halo.getHex(), css:'#'+halo.getHexString()};
+});
+const colorUsed = new Array(16).fill(false);
+function allocColor(){ for(let i=0;i<16;i++){ if(!colorUsed[i]){ colorUsed[i]=true; return i; } } return 0; }
+function freeColor(slot){ colorUsed[slot]=false; }
+let nextBodyId = 1;
+function randUnit(){
+  // uniform-ish direction on the sphere
+  const z=Math.random()*2-1, a=Math.random()*Math.PI*2, r=Math.sqrt(1-z*z);
+  return new THREE.Vector3(r*Math.cos(a), r*Math.sin(a), z);
+}
+
+// ---- orbit trails: world-anchored worldlines, warped by the CURRENT field each
+// frame. A stretch of trail distorts as a well passes over it, then relaxes back
+// to its true shape once the well moves on — an artifact of the observer's mapping,
+// not of the path itself.
+const MAX_TRAIL = 40000;      // preallocated capacity (per body)
+let trailRetain = 1800;       // how many recent ticks to keep (configurable)
+function makeTrail(colorHex){
+  const positions = new Float32Array(MAX_TRAIL*3);
+  const aT = new Float32Array(MAX_TRAIL);
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(positions,3));
+  geo.setAttribute('aT', new THREE.BufferAttribute(aT,1));
+  geo.setDrawRange(0,0);
+  const tu = {                                   // share the live field-uniform objects
+    uStrength:uniforms.uStrength, uModel:uniforms.uModel, uCount:uniforms.uCount,
+    uPos:uniforms.uPos, uMass:uniforms.uMass, uColor:{value:new THREE.Color(colorHex)}
+  };
+  const mat = new THREE.ShaderMaterial({
+    uniforms:tu, transparent:true, depthWrite:false, blending:THREE.AdditiveBlending,
+    vertexShader:`
+      uniform float uStrength; uniform int uModel; uniform int uCount;
+      uniform vec3 uPos[16]; uniform float uMass[16];
+      attribute float aT; varying float vA;
+      ${WARP_GLSL}
+      void main(){ float comp; vec3 wp = warp(position, comp); vA = aT;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(wp,1.0); }`,
+    fragmentShader:`
+      uniform vec3 uColor; varying float vA;
+      void main(){ gl_FragColor = vec4(uColor, vA*0.85); }`
+  });
+  const mesh = new THREE.Line(geo, mat);
+  mesh.frustumCulled = false;
+  scene.add(mesh);
+  const tr = {positions, aT, geo, mesh, count:0};
+  refreshTrailAT(tr);
+  return tr;
+}
+// age ramp is static for a given retain length (oldest = 0, newest = 1) — set once
+function refreshTrailAT(tr){
+  const n=trailRetain;
+  for(let i=0;i<n;i++) tr.aT[i] = n>1 ? i/(n-1) : 1.0;
+  tr.geo.attributes.aT.needsUpdate = true;
+}
+function pushTrail(tr, p){
+  const N=trailRetain, a=tr.positions;
+  if(tr.count < N){ const i=tr.count; a[i*3]=p.x; a[i*3+1]=p.y; a[i*3+2]=p.z; tr.count++; }
+  else { a.copyWithin(0, 3, N*3); a[(N-1)*3]=p.x; a[(N-1)*3+1]=p.y; a[(N-1)*3+2]=p.z; }
+  tr.geo.attributes.position.needsUpdate = true;
+  tr.geo.setDrawRange(0, tr.count);
+}
+function setTrailRetain(n){
+  trailRetain = Math.max(2, Math.min(MAX_TRAIL, n));
+  bodies.forEach(b=>{
+    const tr=b.trail; if(!tr) return;
+    if(tr.count > trailRetain){                 // keep the most recent slice
+      tr.positions.copyWithin(0, (tr.count-trailRetain)*3, tr.count*3);
+      tr.count = trailRetain;
+    }
+    refreshTrailAT(tr);
+    tr.geo.attributes.position.needsUpdate = true;
+    tr.geo.setDrawRange(0, tr.count);
+  });
+}
+function addBody(pos, vel, uiMass, colorSlot){
+  const slot = (colorSlot!=null) ? colorSlot : allocColor();
+  const c = PALETTE[slot];
+  const mass = uiToMass(uiMass);
+  const rad = 8 + 8*Math.cbrt(Math.max(mass,0.02));
+  const core = new THREE.Mesh(new THREE.SphereGeometry(rad,24,24),
+    new THREE.MeshBasicMaterial({color:c.core}));
+  const halo = new THREE.Mesh(new THREE.SphereGeometry(rad*3.2,24,24),
+    new THREE.MeshBasicMaterial({color:c.halo, transparent:true, opacity:0.22,
+      blending:THREE.AdditiveBlending, depthWrite:false}));
+  const halo2 = new THREE.Mesh(new THREE.SphereGeometry(rad*7.5,24,24),
+    new THREE.MeshBasicMaterial({color:c.halo, transparent:true, opacity:0.06,
+      blending:THREE.AdditiveBlending, depthWrite:false}));
+  scene.add(core); scene.add(halo); scene.add(halo2);
+  const trail = makeTrail(c.halo);
+  trail.mesh.visible = state.trails;
+  const b = {id:nextBodyId++, pos:pos.clone(), vel:vel.clone(), uiMass, mass,
+             colorSlot:slot, css:c.css, core, halo, halo2, trail};
+  bodies.push(b); return b;
+}
+function setBodyMass(b, uiMass){
+  b.uiMass = uiMass; b.mass = uiToMass(uiMass);
+  const rad = 8 + 8*Math.cbrt(Math.max(b.mass,0.02));
+  b.core.geometry.dispose(); b.core.geometry = new THREE.SphereGeometry(rad,24,24);
+  b.halo.geometry.dispose(); b.halo.geometry = new THREE.SphereGeometry(rad*3.2,24,24);
+  b.halo2.geometry.dispose(); b.halo2.geometry = new THREE.SphereGeometry(rad*7.5,24,24);
+}
+function removeBody(b){
+  freeColor(b.colorSlot);
+  [b.core,b.halo,b.halo2,b.trail.mesh].forEach(m=>{scene.remove(m); m.geometry.dispose(); m.material.dispose();});
+}
+function removeBodyById(id){
+  const i = bodies.findIndex(b=>b.id===id);
+  if(i<0) return;
+  removeBody(bodies[i]);       // disposes its orbit trail too
+  bodies.splice(i,1);
+  syncBodyUniforms();
+}
+function resetBodies(){
+  while(bodies.length) removeBody(bodies.pop());
+  while(staged.length) freeColor(staged.pop().colorSlot);
+  addBody(new THREE.Vector3(0,0,0), new THREE.Vector3(0,0,0), MASS_UI_DEFAULT);
+  syncBodyUniforms();
+}
+// Staging: a new mass first appears here (inert — not in the sim, no gravity/warp).
+// The operator tunes it, then activates it so it never surprises the system.
+const staged = [];
+function stageMass(){
+  if(bodies.length + staged.length >= NB) return;
+  const slot = allocColor();
+  staged.push({ id:nextBodyId++, uiMass:30, colorSlot:slot, css:PALETTE[slot].css });
+}
+function removeStaged(id){
+  const i = staged.findIndex(e=>e.id===id);
+  if(i<0) return;
+  freeColor(staged[i].colorSlot);
+  staged.splice(i,1);
+}
+// commit a staged mass: place it with a semi-random, roughly-orbital state about the
+// current centre of mass, keeping its chosen mass and colour.
+function activateStaged(entry){
+  if(bodies.length >= NB) return;
+  let cm=new THREE.Vector3(), MT=0;
+  bodies.forEach(b=>{ cm.addScaledVector(b.pos,b.mass); MT+=b.mass; });
+  if(bodies.length) cm.multiplyScalar(1/MT); else MT=1;
+  const r   = 170 + Math.random()*280;
+  const dir = randUnit();
+  const pos = cm.clone().addScaledVector(dir, r);
+  let tang = randUnit();
+  tang.addScaledVector(dir, -tang.dot(dir));
+  if(tang.lengthSq() < 1e-4) tang.set(dir.y,-dir.x,0);
+  tang.normalize();
+  const vc = Math.sqrt(SG*Math.max(MT,0.02)/r) * (0.7 + Math.random()*0.55);
+  addBody(pos, tang.multiplyScalar(vc), entry.uiMass, entry.colorSlot);
+  staged.splice(staged.indexOf(entry), 1);
+  syncBodyUniforms();
+}
+function syncBodyUniforms(){
+  uniforms.uCount.value = bodies.length;
+  for(let i=0;i<NB;i++){
+    if(i<bodies.length){ uniforms.uPos.value[i].copy(bodies[i].pos); uniforms.uMass.value[i]=bodies[i].mass; }
+    else uniforms.uMass.value[i]=0;
+  }
+}
+// leapfrog step for the whole system
+const _acc = [];
+function stepGravity(dt){
+  const nB=bodies.length;
+  if(nB===0) return;
+  if(nB===1){ bodies[0].pos.addScaledVector(bodies[0].vel, dt); return; }  // pure coast
+  for(let i=0;i<nB;i++){ if(!_acc[i]) _acc[i]=new THREE.Vector3(); _acc[i].set(0,0,0); }
+  function accel(){
+    for(let i=0;i<nB;i++) _acc[i].set(0,0,0);
+    for(let i=0;i<nB;i++) for(let j=i+1;j<nB;j++){
+      const bi=bodies[i], bj=bodies[j];
+      const dx=bj.pos.x-bi.pos.x, dy=bj.pos.y-bi.pos.y, dz=bj.pos.z-bi.pos.z;
+      const r2=dx*dx+dy*dy+dz*dz+SOFT2, inv=1/Math.sqrt(r2), inv3=inv/r2;
+      const s=SG*inv3;
+      _acc[i].x+=s*bj.mass*dx; _acc[i].y+=s*bj.mass*dy; _acc[i].z+=s*bj.mass*dz;
+      _acc[j].x-=s*bi.mass*dx; _acc[j].y-=s*bi.mass*dy; _acc[j].z-=s*bi.mass*dz;
+    }
+  }
+  accel();
+  for(let i=0;i<nB;i++) bodies[i].vel.addScaledVector(_acc[i], dt*0.5);
+  for(let i=0;i<nB;i++) bodies[i].pos.addScaledVector(bodies[i].vel, dt);
+  accel();
+  for(let i=0;i<nB;i++) bodies[i].vel.addScaledVector(_acc[i], dt*0.5);
+}
+addBody(new THREE.Vector3(0,0,0), new THREE.Vector3(0,0,0), MASS_UI_DEFAULT);
+syncBodyUniforms();
+
+// ------------------------------------------------------------------ LASER (geodesic photon)
+// A ray fired from the camera through the cursor. In flat space it would be a
+// straight picking ray; here it integrates the eikonal equation of the warped
+// lattice — bending toward higher refractive index (denser space) — so it curves
+// around the mass exactly the way lensed starlight does.
+const MAXPTS = 2000;
+const beamGeo = new THREE.BufferGeometry();
+beamGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(MAXPTS*3),3));
+beamGeo.setDrawRange(0,0);
+const beamLine = new THREE.Line(beamGeo, new THREE.LineBasicMaterial({
+  color:0x66f0ff, transparent:true, opacity:0.9, blending:THREE.AdditiveBlending, depthWrite:false}));
+// faint "what a straight ray would have done" reference
+const ghostGeo = new THREE.BufferGeometry();
+ghostGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(6),3));
+const ghostLine = new THREE.Line(ghostGeo, new THREE.LineBasicMaterial({
+  color:0x4a4668, transparent:true, opacity:0.55, depthWrite:false}));
+const beamGroup = new THREE.Group();
+beamGroup.add(ghostLine); beamGroup.add(beamLine);
+beamGroup.visible = false;
+scene.add(beamGroup);
+
+const raycaster = new THREE.Raycaster();
+camera.updateProjectionMatrix();
+
+// integrate one photon; returns deflection in degrees (or -1 if captured)
+const _p = new THREE.Vector3(), _d = new THREE.Vector3(), _rhat = new THREE.Vector3(),
+      _grad = new THREE.Vector3(), _perp = new THREE.Vector3(), _d0 = new THREE.Vector3();
+function firePhoton(origin, dir){
+  const K0 = uniforms.uStrength.value;
+  const invSq = (uniforms.uModel.value === 2);
+  const Kbase = invSq ? K0*90000.0 : K0*190.0;
+  const soft  = invSq ? 40.0 : 22.0;
+
+  _p.copy(origin); _d.copy(dir).normalize(); _d0.copy(_d);
+  const pos = beamGeo.attributes.position.array;
+  pos[0]=_p.x; pos[1]=_p.y; pos[2]=_p.z;
+  let n = 1, captured = false;
+  const nB = bodies.length;
+
+  for(let step=0; step<MAXPTS && n<MAXPTS; step++){
+    // summed refractive gradient + nearest-mass distance
+    _grad.set(0,0,0);
+    let nd = 1e9, rFar = _p.length();
+    for(let i=0;i<nB;i++){
+      const b = bodies[i];
+      const dx=_p.x-b.pos.x, dy=_p.y-b.pos.y, dz=_p.z-b.pos.z;
+      const d = Math.hypot(dx,dy,dz);
+      if(d < nd) nd = d;
+      if(d < 0.001) continue;
+      const K = Kbase * b.mass;
+      let dndr;                                   // dn/dd, negative (n rises toward body)
+      if(invSq){ const den=d*d+soft*soft; dndr = -K*2*d/(den*den); }
+      else     { const den=d+soft;        dndr = -K/(den*den); }
+      const g = dndr / d;                         // (p-body)/d * dndr, packed
+      _grad.x += dx*g; _grad.y += dy*g; _grad.z += dz*g;
+    }
+    if(nd < 15){ captured = true; break; }
+    const h = Math.min(28, Math.max(4, nd*0.03));
+    _perp.copy(_grad).addScaledVector(_d, -_grad.dot(_d));
+    _d.addScaledVector(_perp, h).normalize();
+    _p.addScaledVector(_d, h);
+    pos[n*3]=_p.x; pos[n*3+1]=_p.y; pos[n*3+2]=_p.z; n++;
+    if(rFar>1900 && _d.dot(_p)>0) break;          // escaped the scene
+  }
+  beamGeo.attributes.position.needsUpdate = true;
+  beamGeo.setDrawRange(0, n);
+
+  const L = 3400;                                  // straight reference ray
+  const gp = ghostGeo.attributes.position.array;
+  gp[0]=origin.x; gp[1]=origin.y; gp[2]=origin.z;
+  gp[3]=origin.x+_d0.x*L; gp[4]=origin.y+_d0.y*L; gp[5]=origin.z+_d0.z*L;
+  ghostGeo.attributes.position.needsUpdate = true;
+
+  const defl = captured ? -1 : THREE.MathUtils.radToDeg(Math.acos(Math.min(1,_d0.dot(_d))));
+  const info = document.getElementById('laserInfo');
+  info.textContent = (defl < 0 ? 'photon captured by a mass' : 'deflection ' + defl.toFixed(1) + '°')
+                     + (laserFrozen ? ' · locked' : '');
+}
+
+// last aim ray, anchored in world space; re-solved every frame against the moving field
+const lastAim = {origin:new THREE.Vector3(), dir:new THREE.Vector3(), active:false};
+function aimNDC(nx, ny){
+  camera.updateMatrixWorld();
+  raycaster.setFromCamera({x:nx, y:ny}, camera);
+  lastAim.origin.copy(raycaster.ray.origin);
+  lastAim.dir.copy(raycaster.ray.direction);
+  lastAim.active = true;
+  firePhoton(lastAim.origin, lastAim.dir);
+}
+function reaimPhoton(){ if(lastAim.active) firePhoton(lastAim.origin, lastAim.dir); }
+function aimEvent(e){
+  const rect = renderer.domElement.getBoundingClientRect();
+  aimNDC(((e.clientX-rect.left)/rect.width)*2-1, -((e.clientY-rect.top)/rect.height)*2+1);
+}
+
+// ------------------------------------------------------------------ STATE + CAMERA (custom orbit)
+let laserFrozen = false;
+function updateLaserHint(){
+  const h = document.getElementById('hint');
+  if(!state.laser){ h.textContent = 'drag to orbit · scroll to zoom'; return; }
+  h.textContent = laserFrozen
+    ? 'beam locked · drag to orbit · press F to re-aim'
+    : 'move cursor to aim · press F to lock the beam · drag to orbit';
+}
+const cam = { theta:0.9, phi:1.15, radius:1750, tRadius:1750 };
+function applyCam(){
+  const r=cam.radius, st=Math.sin(cam.phi), ct=Math.cos(cam.phi), T=camTarget;
+  camera.position.set(
+    T.x + r*st*Math.cos(cam.theta),
+    T.y + r*ct,
+    T.z + r*st*Math.sin(cam.theta)
+  );
+  camera.lookAt(T);
+}
+applyCam();
+
+// ------------------------------------------------------------------ SHAPED-ORBIT PLACEMENT
+// Drag on a plane facing the camera (through the barycenter): the start point is where
+// the mass drops, the drag defines an arc, velocity is tangent to it, and a shorter
+// drag = faster launch (tight orbit), a longer drag = slower (wide arc).
+const PLACE_UI_MASS=40, PLACE_SPEED_MAX=30, PLACE_DRAG_REF=380, PLACE_ARROW=9, PL_CSEG=72;
+const plNormal=new THREE.Vector3(), plPlane=new THREE.Plane();
+const placeStart=new THREE.Vector3(), placeCursor=new THREE.Vector3(), placeAim=new THREE.Vector3(), placeVel=new THREE.Vector3();
+let placing=false, placeShift=false;
+function mkLine(n,color,op,add){
+  const g=new THREE.BufferGeometry(); g.setAttribute('position',new THREE.BufferAttribute(new Float32Array(n*3),3));
+  const m=new THREE.LineBasicMaterial({color,transparent:true,opacity:op,depthWrite:false});
+  if(add) m.blending=THREE.AdditiveBlending;
+  return {g, line:new THREE.Line(g,m)};
+}
+const plRadius=mkLine(2,0x6a6a8a,0.5,false);
+const plArrow =mkLine(2,0x8ef0ff,0.95,true);
+const plCirc  =mkLine(PL_CSEG+1,0x8b6bd0,0.4,false);
+const plDot=new THREE.Mesh(new THREE.SphereGeometry(7,16,16),new THREE.MeshBasicMaterial({color:0xffffff}));
+const placeGroup=new THREE.Group();
+placeGroup.add(plRadius.line, plCirc.line, plArrow.line, plDot);
+placeGroup.visible=false; scene.add(placeGroup);
+
+function screenToPlane(nx,ny){
+  camera.updateMatrixWorld();
+  camera.getWorldDirection(plNormal);
+  plPlane.setFromNormalAndCoplanarPoint(plNormal, camTarget);
+  raycaster.setFromCamera({x:nx,y:ny}, camera);
+  const out=new THREE.Vector3();
+  return raycaster.ray.intersectPlane(plPlane, out) ? out : null;
+}
+function evtPlane(e){
+  const r=renderer.domElement.getBoundingClientRect();
+  return screenToPlane(((e.clientX-r.left)/r.width)*2-1, -((e.clientY-r.top)/r.height)*2+1);
+}
+function refreshPlacement(){
+  const rp=plRadius.g.attributes.position.array;
+  rp[0]=placeStart.x;rp[1]=placeStart.y;rp[2]=placeStart.z;
+  rp[3]=placeCursor.x;rp[4]=placeCursor.y;rp[5]=placeCursor.z;
+  plRadius.g.attributes.position.needsUpdate=true;
+  const radial=new THREE.Vector3().subVectors(placeCursor, placeStart);
+  const radLen=radial.length();
+  camera.getWorldDirection(plNormal);
+  if(placeShift){
+    // Shift: the drag sets the velocity vector directly — free direction, longer = faster
+    placeVel.subVectors(placeAim, placeCursor).multiplyScalar(1/PLACE_ARROW);
+    const spd=placeVel.length(), cap=PLACE_SPEED_MAX*2.0;
+    if(spd>cap) placeVel.multiplyScalar(cap/spd);
+  } else {
+    // Normal: velocity tangent to the ring, speed falls off with radius
+    let tang=new THREE.Vector3().crossVectors(plNormal, radial);   // in-plane ⟂ to radius
+    if(tang.lengthSq()<1e-6) tang.set(1,0,0);
+    tang.normalize();
+    const speed=PLACE_SPEED_MAX*Math.min(1, Math.max(0.04, 1-radLen/PLACE_DRAG_REF));
+    placeVel.copy(tang).multiplyScalar(speed);
+  }
+  const ap=plArrow.g.attributes.position.array;
+  ap[0]=placeCursor.x;ap[1]=placeCursor.y;ap[2]=placeCursor.z;
+  ap[3]=placeCursor.x+placeVel.x*PLACE_ARROW;ap[4]=placeCursor.y+placeVel.y*PLACE_ARROW;ap[5]=placeCursor.z+placeVel.z*PLACE_ARROW;
+  plArrow.g.attributes.position.needsUpdate=true;
+  const u=new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld,0);
+  const v=new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld,1);
+  const cp=plCirc.g.attributes.position.array;
+  for(let s=0;s<=PL_CSEG;s++){ const t=s/PL_CSEG*6.28318530718, c=Math.cos(t)*radLen, si=Math.sin(t)*radLen;
+    cp[s*3]=placeStart.x+u.x*c+v.x*si; cp[s*3+1]=placeStart.y+u.y*c+v.y*si; cp[s*3+2]=placeStart.z+u.z*c+v.z*si;
+  }
+  plCirc.g.attributes.position.needsUpdate=true;
+  plDot.position.copy(placeCursor);
+}
+function beginPlacement(e){
+  const p=evtPlane(e); if(!p) return false;
+  placeStart.copy(p); placeCursor.copy(p); placeAim.copy(p); placeVel.set(0,0,0); placeShift=false;
+  placing=true; placeGroup.visible=true; refreshPlacement(); return true;
+}
+function endPlacement(){
+  if(!placing) return;
+  placing=false; placeGroup.visible=false;
+  if(bodies.length + staged.length >= NB) return;   // no free colour slot
+  addBody(placeCursor.clone(), placeVel.clone(), PLACE_UI_MASS);
+  syncBodyUniforms(); renderMassList(); updateBodyCount();
+}
+
+// drag / zoom
+let dragging=false, lx=0, ly=0;
+renderer.domElement.addEventListener('pointerdown', e=>{
+  renderer.domElement.setPointerCapture(e.pointerId);
+  if(state.place && beginPlacement(e)) return;      // start drawing an orbit
+  dragging=true; lx=e.clientX; ly=e.clientY;
+  if(state.laser && !laserFrozen) aimEvent(e);      // tap-to-aim (touch has no hover)
+});
+renderer.domElement.addEventListener('pointerup', ()=>{ if(placing) endPlacement(); dragging=false; });
+renderer.domElement.addEventListener('pointermove', e=>{
+  if(placing){
+    const p=evtPlane(e);
+    if(p){
+      if(e.shiftKey){ placeShift=true; placeAim.copy(p); }         // aim the velocity vector
+      else { placeShift=false; placeCursor.copy(p); placeAim.copy(p); }  // move the mass
+      refreshPlacement();
+    }
+  } else if(dragging){
+    cam.theta -= (e.clientX-lx)*0.006;
+    cam.phi   -= (e.clientY-ly)*0.006;
+    cam.phi = Math.max(0.12, Math.min(Math.PI-0.12, cam.phi));
+    lx=e.clientX; ly=e.clientY;
+  } else if(state.laser && !laserFrozen){
+    aimEvent(e);                          // sweep the cursor to sweep the beam
+  }
+});
+renderer.domElement.addEventListener('wheel', e=>{
+  e.preventDefault();
+  cam.tRadius *= (1 + Math.sign(e.deltaY)*0.09);
+  cam.tRadius = Math.max(160, Math.min(30000, cam.tRadius));
+}, {passive:false});
+
+// ------------------------------------------------------------------ UI wiring
+const $=s=>document.querySelector(s);
+const modelDescs=[
+  'Smooth radial power-law — nodes fold inward with a continuous density gradient.',
+  'Inward pull ∝ 1/r, the Newtonian potential. Inner nodes collapse to a sharp core.',
+  'Inward pull ∝ 1/r² — the F = G·m₁m₂/r² falloff. The steepest, most singular well.'
+];
+document.querySelectorAll('#model button').forEach(b=>b.addEventListener('click',()=>{
+  document.querySelectorAll('#model button').forEach(x=>x.classList.remove('on'));
+  b.classList.add('on');
+  uniforms.uModel.value=+b.dataset.m;
+  $('#modelDesc').textContent=modelDescs[+b.dataset.m];
+}));
+$('#strength').addEventListener('input',e=>{
+  uniforms.uStrength.value=e.target.value/100;
+  $('#sVal').textContent=e.target.value+'%';
+});
+function fmtCount(n){ const c=n*n*n; return n+'³ · '+(c>=1e6?(c/1e6).toFixed(1)+'M':Math.round(c/1000)+'k'); }
+function fmtWidth(w){ return w>=1000 ? (w/1000).toFixed(w>=10000?0:1)+'k' : ''+Math.round(w); }
+function densOf(v){ return Math.round(24 + v/100*86); }      // 24 … 110 points/axis
+function halfOf(v){ return 500 + v/100*4500; }               // box half-width 500 … 5000
+function applyClip(){
+  const v=+$('#clip').value;
+  uniforms.uClip.value = v>=100 ? HALF+10 : -HALF + (HALF*2)*(v/100);
+  $('#cVal').textContent = v>=100 ? 'off' : Math.round((1-v/100)*100)+'% cut';
+}
+$('#clip').addEventListener('input', applyClip);
+
+// Point density: number of samples per axis (drives compute). Live label, rebuild on release.
+$('#gridDens').addEventListener('input', e=>{ $('#densVal').textContent = fmtCount(densOf(+e.target.value)); });
+$('#gridDens').addEventListener('change', e=>{ pointRes = densOf(+e.target.value); buildPoints(pointRes); });
+
+// Grid density: cage divisions per axis (6…40, capped). Live label, rebuild on release.
+function cageDivOf(v){ return Math.round(6 + v/100*34); }
+$('#cageDensCtl').addEventListener('input', e=>{ $('#cageVal').textContent = (cageDivOf(+e.target.value)+1)+' / axis'; });
+$('#cageDensCtl').addEventListener('change', e=>{ cageDiv = cageDivOf(+e.target.value); updateCageSpacing(); });
+
+// Grid volume: spatial extent of the lattice (free — same point count). Rebuild on release.
+$('#gridVol').addEventListener('input', e=>{ $('#volVal').textContent = fmtWidth(halfOf(+e.target.value)*2); });
+$('#gridVol').addEventListener('change', e=>{
+  HALF = halfOf(+e.target.value);
+  uniforms.uBox.value = HALF*2;
+  buildPoints(pointRes);
+  updateCageSpacing();
+  applyClip();
+});
+
+// Brightness: overall alpha multiplier for points + cage lines.
+$('#gridBright').addEventListener('input', e=>{
+  const b = 0.2 + (+e.target.value)/100*3.8;      // 0.2× … 4.0×
+  uniforms.uBright.value = b;
+  $('#brightVal').textContent = b.toFixed(1)+'×';
+});
+// Distance falloff: point-size floor. Low falloff = points hold size when far (stay visible).
+$('#gridFall').addEventListener('input', e=>{
+  const v=+e.target.value;
+  uniforms.uMinSize.value = 10 - v/100*9.6;        // v=0 → 10px floor, v=100 → 0.4px
+  $('#fallVal').textContent = v>=80 ? 'high' : v>=45 ? 'med' : v>=15 ? 'low' : 'none';
+});
+document.querySelectorAll('.tog').forEach(t=>t.addEventListener('click',()=>{
+  const k=t.dataset.t;
+  state[k]=!state[k];
+  t.classList.toggle('on',state[k]);
+  if(k==='points' && pointsMesh) pointsMesh.visible=state.points;
+  if(k==='sim' && state.sim && state.place){ document.querySelector('.tog[data-t="place"]').click(); }
+  if(k==='lines'){ if(!linesMesh) buildLines(); linesMesh.visible=state.lines; }
+  if(k==='trails'){ bodies.forEach(b=>b.trail.mesh.visible=state.trails); }
+  if(k==='laser'){
+    if(state.laser && state.place){ document.querySelector('.tog[data-t="place"]').click(); }
+    beamGroup.visible=state.laser;
+    laserFrozen=false;
+    document.getElementById('laserInfo').style.display = state.laser?'block':'none';
+    updateLaserHint();
+    if(state.laser) aimNDC(0.30, 0.05);   // grazing shot so the bend shows immediately
+  }
+  if(k==='place'){
+    const h=document.getElementById('hint');
+    if(state.place){
+      if(state.laser){ document.querySelector('.tog[data-t="laser"]').click(); }
+      if(state.sim){ document.querySelector('.tog[data-t="sim"]').click(); }   // pause to draw
+      h.textContent='drag to place a mass · hold Shift while dragging to aim its velocity · then Run orbit / space to go';
+    } else {
+      placing=false; placeGroup.visible=false;
+      h.textContent = state.laser ? h.textContent : 'drag to orbit · scroll to zoom';
+    }
+  }
+}));
+$('#reset').addEventListener('click',()=>{
+  cam.theta=0.9; cam.phi=1.15; cam.tRadius=1750;
+});
+function updateBodyCount(){
+  const a=bodies.length, s=staged.length;
+  document.getElementById('bodyCount').textContent = s ? (a+'+'+s+' / '+NB) : (a+' / '+NB);
+}
+const massListEl = document.getElementById('massList');
+function iconBtn(cls, glyph, title, fn){
+  const b=document.createElement('button'); b.className=cls; b.textContent=glyph; b.title=title;
+  b.addEventListener('click', fn); return b;
+}
+function massRow(css, uiMass, onMass, buttons, staged){
+  const row=document.createElement('div'); row.className='massRow'+(staged?' staged':'');
+  const sw=document.createElement('span'); sw.className='massSwatch'; sw.style.background=css; sw.style.color=css;
+  const sl=document.createElement('input'); sl.type='range'; sl.min='1'; sl.max='100'; sl.value=String(Math.round(uiMass));
+  const num=document.createElement('span'); num.className='massNum'; num.textContent=Math.round(uiMass);
+  sl.addEventListener('input', ()=>{ const v=+sl.value; num.textContent=v; onMass(v); });
+  row.append(sw, sl, num);
+  buttons.forEach(btn=>row.appendChild(btn));
+  return row;
+}
+function renderMassList(){
+  massListEl.innerHTML='';
+  bodies.forEach(b=>{
+    const del=iconBtn('massDel','×','Remove this mass',()=>{ removeBodyById(b.id); renderMassList(); updateBodyCount(); });
+    massListEl.appendChild(massRow(b.css, b.uiMass, v=>setBodyMass(b,v), [del], false));
+  });
+  staged.forEach(e=>{
+    const act=iconBtn('massAdd','▶','Activate in the simulation',()=>{ activateStaged(e); renderMassList(); updateBodyCount(); });
+    const del=iconBtn('massDel','×','Discard this staged mass',()=>{ removeStaged(e.id); renderMassList(); updateBodyCount(); });
+    massListEl.appendChild(massRow(e.css, e.uiMass, v=>{ e.uiMass=v; }, [act,del], true));
+  });
+}
+$('#inject').addEventListener('click',()=>{ stageMass(); renderMassList(); updateBodyCount(); });
+$('#clearBodies').addEventListener('click',()=>{ resetBodies(); renderMassList(); updateBodyCount(); });
+renderMassList();
+updateBodyCount();
+function fmtTicks(n){ return n>=1000 ? (n/1000).toFixed(n>=10000?0:1)+'k' : ''+n; }
+$('#trailLen').addEventListener('input', e=>{
+  const retain = Math.round(500*Math.pow(80, (+e.target.value)/100));   // 500 … 40000
+  setTrailRetain(retain);
+  $('#trailVal').textContent = fmtTicks(retain)+' ticks';
+});
+
+// ------------------------------------------------------------------ build + loop
+buildPoints(pointRes);
+
+const DT = 0.14;              // sim-time advanced per frame
+let last=performance.now(), frames=0, facc=0;
+function loop(now){
+  requestAnimationFrame(loop);
+  const dt=(now-last)/1000; last=now;
+
+  // advance gravity (4 substeps), including a lone body's straight-line coast
+  if(state.sim){
+    for(let s=0;s<4;s++) stepGravity(DT/4);
+  }
+  for(let i=0;i<bodies.length;i++){
+    const b=bodies[i];
+    b.core.position.copy(b.pos); b.halo.position.copy(b.pos); b.halo2.position.copy(b.pos);
+    if(state.sim && state.trails) pushTrail(b.trail, b.pos);
+  }
+  syncBodyUniforms();
+
+  // barycenter: track it (grid tiles + camera follow → snowfall) or freeze (world frame)
+  computeBary(bary);
+  if(state.track && !state.place){ uniforms.uBary.value.copy(bary); camTarget.copy(bary); }
+
+  // stream the cage with the box: drop trailing cells, grow leading cells
+  if(state.lines && linesMesh) rebuildCage(uniforms.uBary.value);
+
+  if(state.spin && !state.place) cam.theta += dt*0.12;
+  cam.radius += (cam.tRadius-cam.radius)*Math.min(1,dt*8);
+  applyCam();
+
+  // the beam is a test particle in the current field — re-solve it every frame
+  if(state.laser) reaimPhoton();
+
+  renderer.render(scene,camera);
+  frames++; facc+=dt;
+  if(facc>=0.5){ $('#fps').textContent=Math.round(frames/facc)+' fps'; frames=0; facc=0; }
+}
+requestAnimationFrame(loop);
+
+window.addEventListener('resize',()=>{
+  camera.aspect=window.innerWidth/window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+// F = lock / unlock the beam from the cursor
+window.addEventListener('keydown', e=>{
+  if(e.key===' '){ e.preventDefault(); document.querySelector('.tog[data-t="sim"]').click(); return; }
+  if(e.key!=='f' && e.key!=='F') return;
+  const tog = document.querySelector('.tog[data-t="laser"]');
+  if(!state.laser){ tog.click(); return; }   // first press turns laser on (live)
+  laserFrozen = !laserFrozen;
+  updateLaserHint();
+  const info = document.getElementById('laserInfo');
+  info.textContent = info.textContent.replace(/ · locked$/,'');
+  if(laserFrozen) info.textContent += ' · locked';
+});
+})();
+</script>
+</body>
+</html>
